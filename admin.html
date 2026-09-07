@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel de Administración | Quinta Javy'aha Ña Juana-Irene</title>
+  <meta name="robots" content="noindex, nofollow">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231b4332'><path d='M12 2L2 22h20L12 2zm0 3.8l6.8 13.6H5.2L12 5.8z'/></svg>">
+
+  <!-- Google Fonts: Playfair Display + Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            forest: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              600: '#40916c',
+              700: '#2d6a4f',
+              800: '#1b4332',
+              900: '#081c15',
+              950: '#04100c'
+            },
+            gold: {
+              100: '#faedcd',
+              400: '#e0b484',
+              500: '#d4a373',
+              600: '#bc6c25'
+            }
+          },
+          fontFamily: {
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Estilos Personalizados del Portal -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="bg-[#f7f8f6] text-gray-800 antialiased min-h-screen flex flex-col font-sans">
+
+  <!-- ========================================================================
+       TOP HEADER DE ADMINISTRACIÓN
+       ======================================================================== -->
+  <header class="bg-forest-900 text-white border-b border-forest-800 sticky top-0 z-40 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand Admin -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-forest-800 border border-gold-400/40 flex items-center justify-center text-gold-400 text-lg shadow">
+          <i class="fa-solid fa-tree"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-serif text-lg sm:text-xl font-bold tracking-tight text-white">Quinta Javy'aha</span>
+            <span class="bg-gold-500/20 text-gold-400 text-[0.65rem] uppercase font-bold px-2 py-0.5 rounded-full border border-gold-500/30">
+              Admin
+            </span>
+          </div>
+          <span class="text-[0.68rem] text-emerald-300 block -mt-1 font-medium">
+            Panel de Gestión & Calendario • Carapeguá
+          </span>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="flex items-center gap-3">
+        <a href="index.html" class="bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-2 border border-white/10">
+          <i class="fa-solid fa-arrow-up-right-from-square text-xs text-gold-400"></i>
+          <span class="hidden sm:inline">Ver Sitio Público</span>
+        </a>
+        <button id="open-new-res-modal-btn" class="btn-gold px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow">
+          <i class="fa-solid fa-plus"></i>
+          <span>Nueva Reserva</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       MAIN DASHBOARD CONTENT
+       ======================================================================== -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+
+    <!-- 1. KPI Cards Row -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      
+      <!-- Card 1 -->
+      <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div>
+          <span class="text-xs uppercase font-bold tracking-wider text-gray-500 block mb-1">Confirmadas este Mes</span>
+          <span id="kpi-confirmed" class="font-serif text-2xl sm:text-3xl font-bold text-forest-900">0</span>
+          <span class="text-[0.68rem] text-emerald-600 block mt-0.5 font-medium">Reservas activas</span>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-circle-check"></i>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div>
+          <span class="text-xs uppercase font-bold tracking-wider text-gray-500 block mb-1">Peticiones Web</span>
+          <span id="kpi-pending" class="font-serif text-2xl sm:text-3xl font-bold text-amber-600">0</span>
+          <span class="text-[0.68rem] text-amber-600 block mt-0.5 font-medium">Por confirmar</span>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-bell animate-bounce"></i>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div>
+          <span class="text-xs uppercase font-bold tracking-wider text-gray-500 block mb-1">Días Ocupados</span>
+          <span id="kpi-occupied" class="font-serif text-2xl sm:text-3xl font-bold text-red-700">0</span>
+          <span class="text-[0.68rem] text-gray-400 block mt-0.5 font-medium">En el mes actual</span>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-red-50 text-red-700 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-calendar-xmark"></i>
+        </div>
+      </div>
+
+      <!-- Card 4 -->
+      <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div>
+          <span class="text-xs uppercase font-bold tracking-wider text-gray-500 block mb-1">Ingresos Estimados</span>
+          <span id="kpi-revenue" class="font-serif text-xl sm:text-2xl font-bold text-forest-900">Gs. 0</span>
+          <span class="text-[0.68rem] text-emerald-600 block mt-0.5 font-medium">Confirmados en el mes</span>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-forest-50 text-forest-800 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-hand-holding-dollar"></i>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TABS DE NAVEGACIÓN PRINCIPAL DEL PANEL -->
+    <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
+      <button id="nav-btn-calendar" class="admin-tab-btn active px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-forest-800 text-white shadow transition flex items-center gap-2" data-tab="calendar">
+        <i class="fa-solid fa-calendar-days text-gold-400"></i>
+        <span>Calendario de Disponibilidad</span>
+      </button>
+      <button id="nav-btn-reservations" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="reservations">
+        <i class="fa-solid fa-inbox text-amber-500"></i>
+        <span>Peticiones Web</span>
+        <span id="nav-pending-badge" class="px-2 py-0.5 rounded-full text-[0.68rem] bg-amber-100 text-amber-800 font-extrabold ml-1">0</span>
+      </button>
+      <button id="nav-btn-pricing" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="pricing">
+        <i class="fa-solid fa-tags text-emerald-600"></i>
+        <span>Tarifas y Precios</span>
+        <span class="px-2 py-0.5 rounded-full text-[0.65rem] bg-emerald-100 text-emerald-800 font-bold ml-1">Configurable</span>
+      </button>
+    </div>
+
+    <!-- 2. CALENDARIO INTUITIVO DE DISPONIBILIDAD -->
+    <section id="section-calendar" class="admin-view-section bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7">
+      
+      <!-- Calendar Header & Navigation -->
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs">
+            <i class="fa-solid fa-calendar-days text-gold-600"></i> Calendario de Ocupación
+          </span>
+          <h2 id="cal-month-title" class="font-serif text-2xl sm:text-3xl font-bold text-forest-900 mt-1">
+            Septiembre 2026
+          </h2>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+          <button id="cal-prev-btn" class="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 transition" aria-label="Mes anterior">
+            <i class="fa-solid fa-chevron-left text-sm"></i>
+          </button>
+          <button id="cal-today-btn" class="px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-100 text-xs font-bold text-gray-700 transition">
+            Hoy
+          </button>
+          <button id="cal-next-btn" class="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 transition" aria-label="Mes siguiente">
+            <i class="fa-solid fa-chevron-right text-sm"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Color Legend Bar -->
+      <div class="py-4 flex flex-wrap items-center gap-4 text-xs text-gray-600 border-b border-gray-100 bg-gray-50/70 px-4 rounded-xl mt-4">
+        <span class="font-bold text-gray-700">Referencias:</span>
+        <div class="flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
+          <span>🟢 Disponible (Libre)</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>
+          <span>🔴 Ocupado / Confirmado</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-amber-400 inline-block"></span>
+          <span>🟡 Petición Web Pendiente</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="w-3 h-3 rounded-full bg-gray-300 inline-block"></span>
+          <span>⚪ Fecha Pasada</span>
+        </div>
+        <div class="ml-auto text-[0.7rem] text-forest-800 font-medium hidden md:inline">
+          <i class="fa-solid fa-hand-pointer mr-1"></i> Haz clic en cualquier día para ver detalles o bloquear
+        </div>
+      </div>
+
+      <!-- Weekday Headers -->
+      <div class="grid grid-cols-7 gap-2 mt-4 text-center text-xs font-extrabold uppercase tracking-wider text-gray-500 pb-2">
+        <span>Lun</span>
+        <span>Mar</span>
+        <span>Mié</span>
+        <span>Jue</span>
+        <span>Vie</span>
+        <span class="text-forest-800 font-black">Sáb</span>
+        <span class="text-forest-800 font-black">Dom</span>
+      </div>
+
+      <!-- Days Grid Container -->
+      <div id="cal-days-grid" class="grid grid-cols-7 gap-1.5 sm:gap-2.5 mt-1">
+        <!-- Renderizado dinámico desde admin.js -->
+      </div>
+
+    </section>
+
+    <!-- 3. BANDEJA DE PETICIONES Y SOLICITUDES WEB -->
+    <section id="section-reservations" class="admin-view-section bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs">
+            <i class="fa-solid fa-inbox text-gold-600"></i> Solicitudes Recibidas
+          </span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">
+            Gestión de Peticiones y Reservas
+          </h3>
+          <p class="text-xs sm:text-sm text-gray-500">
+            Administra las consultas enviadas por los clientes desde el formulario y cotizador de la web.
+          </p>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="w-full md:w-72 relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+          <input type="text" id="search-reservations" placeholder="Buscar por cliente, tel..." class="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest-800 focus:bg-white transition">
+        </div>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-4">
+        <button class="filter-tab-btn px-4 py-1.5 rounded-xl text-xs font-bold bg-forest-800 text-white shadow transition" data-filter="todas">
+          Todas
+        </button>
+        <button class="filter-tab-btn px-4 py-1.5 rounded-xl text-xs font-bold bg-white text-gray-600 hover:bg-gray-100 transition border border-gray-200" data-filter="pendiente">
+          Pendientes (Web)
+        </button>
+        <button class="filter-tab-btn px-4 py-1.5 rounded-xl text-xs font-bold bg-white text-gray-600 hover:bg-gray-100 transition border border-gray-200" data-filter="confirmada">
+          Confirmadas (Ocupadas)
+        </button>
+        <button class="filter-tab-btn px-4 py-1.5 rounded-xl text-xs font-bold bg-white text-gray-600 hover:bg-gray-100 transition border border-gray-200" data-filter="cancelada">
+          Canceladas / Liberadas
+        </button>
+      </div>
+
+      <!-- Reservations Table / Cards Container -->
+      <div id="reservations-list-container" class="min-h-[220px]">
+        <!-- Renderizado dinámico desde admin.js -->
+      </div>
+
+    </section>
+
+    <!-- 4. CONFIGURACIÓN DE TARIFAS Y PRECIOS PARAMETRIZABLES -->
+    <section id="section-pricing" class="admin-view-section bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-8 space-y-8">
+      
+      <!-- Pricing Header -->
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs">
+            <i class="fa-solid fa-sliders text-gold-600"></i> Parametrización Comercial
+          </span>
+          <h3 class="font-serif text-2xl sm:text-3xl font-bold text-forest-900 mt-1">
+            Tarifas y Precios de Alquiler
+          </h3>
+          <p class="text-xs sm:text-sm text-gray-500 max-w-2xl mt-1">
+            Modifica los valores cuando existan variaciones de temporada, inflación o promociones especiales. Los cambios se actualizarán al instante en el cotizador del sitio web público.
+          </p>
+        </div>
+
+        <!-- Quick batch adjustments bar -->
+        <div class="bg-gray-50 border border-gray-200 p-3 rounded-2xl flex flex-wrap items-center gap-2">
+          <span class="text-xs font-bold text-gray-700 block w-full sm:w-auto">Ajustes Rápidos:</span>
+          <button type="button" class="btn-batch-adjust px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition" data-percent="10">
+            +10% Verano
+          </button>
+          <button type="button" class="btn-batch-adjust px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition" data-percent="15">
+            +15% Feriados
+          </button>
+          <button type="button" class="btn-batch-adjust px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 transition" data-percent="-10">
+            -10% Promo
+          </button>
+          <button type="button" class="btn-batch-adjust px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 transition" data-percent="-15">
+            -15% Invierno
+          </button>
+        </div>
+      </div>
+
+      <!-- Pricing Form Inputs Grid -->
+      <form id="pricing-settings-form" class="space-y-8" onsubmit="return false;">
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+          
+          <!-- Card 1: Tarifas Base por Evento -->
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-champagne-glasses text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">1. Tarifas Base por Tipo de Evento</h4>
+            </div>
+
+            <div class="space-y-3 text-sm">
+              <div>
+                <label for="price-pasadia" class="block text-xs font-bold text-gray-700 mb-1">
+                  ☀️ Pasadía de Sol & Relax (9:00 a 19:00 hs)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-pasadia" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="700000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-cumple" class="block text-xs font-bold text-gray-700 mb-1">
+                  🎉 Cumpleaños / Festejo Privado (13:00 a 01:00 hs)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-cumple" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="1200000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-boda" class="block text-xs font-bold text-gray-700 mb-1">
+                  💍 Boda / 15 Años Soñado (Exclusividad Completa)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-boda" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="2000000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-corporativo" class="block text-xs font-bold text-gray-700 mb-1">
+                  💼 Encuentro Corporativo / Retiro
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-corporativo" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="1500000">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Recargos por Capacidad de Invitados -->
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-users text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">2. Recargo según Cantidad de Invitados</h4>
+            </div>
+
+            <div class="space-y-3 text-sm">
+              <div>
+                <label for="price-guest-30" class="block text-xs font-bold text-gray-700 mb-1">
+                  👥 Hasta 30 personas (Grupo Íntimo - Base)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-guest-30" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="0">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-guest-80" class="block text-xs font-bold text-gray-700 mb-1">
+                  👥 30 a 80 personas (Recargo adicional)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-guest-80" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="300000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-guest-150" class="block text-xs font-bold text-gray-700 mb-1">
+                  👥 80 a 150 personas (Recargo adicional)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-guest-150" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="600000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-guest-300" class="block text-xs font-bold text-gray-700 mb-1">
+                  👥 150 a 300+ personas (Salón Climatizado con Blindex)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-guest-300" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="1000000">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Ajustes por Día de la Semana -->
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-calendar-day text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">3. Ajuste por Día de la Semana</h4>
+            </div>
+
+            <div class="space-y-3 text-sm">
+              <div>
+                <label for="price-day-semana-desc" class="block text-xs font-bold text-gray-700 mb-1">
+                  📅 Lunes a Jueves (% de Descuento Promocional)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">%</span>
+                  <input type="number" min="0" max="90" id="price-day-semana-desc" class="w-full bg-white border border-gray-300 rounded-xl pl-9 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="15">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-day-viernes" class="block text-xs font-bold text-gray-700 mb-1">
+                  📅 Viernes (Recargo Tarde/Noche)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-day-viernes" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="150000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-day-finde" class="block text-xs font-bold text-gray-700 mb-1">
+                  📅 Sábados, Domingos o Feriados (Días de Alta Demanda)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-day-finde" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="300000">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: Servicios Adicionales / Extras -->
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-wand-magic-sparkles text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">4. Servicios Adicionales / Opcionales</h4>
+            </div>
+
+            <div class="space-y-3 text-sm">
+              <div>
+                <label for="price-extra-luces" class="block text-xs font-bold text-gray-700 mb-1">
+                  ✨ Guirnaldas & Luces Cálidas Nocturnas
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-extra-luces" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="200000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-extra-parrillero" class="block text-xs font-bold text-gray-700 mb-1">
+                  🥩 Asistente de Parrilla / Asador Profesional
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-extra-parrillero" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="250000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-extra-mobiliario" class="block text-xs font-bold text-gray-700 mb-1">
+                  🪑 Mesas y Sillas Adicionales (Juego Extra)
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-extra-mobiliario" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="200000">
+                </div>
+              </div>
+
+              <div>
+                <label for="price-extra-cancha" class="block text-xs font-bold text-gray-700 mb-1">
+                  ⚽ Iluminación Especial Áreas Verdes & Cancha
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
+                  <input type="number" step="10000" id="price-extra-cancha" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="150000">
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Live Simulation Preview Box -->
+        <div class="bg-gradient-to-r from-forest-900 to-forest-800 text-white p-6 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-emerald-500/20 shadow">
+          <div>
+            <span class="text-xs font-bold text-gold-400 uppercase tracking-wider block">Simulación en Vivo</span>
+            <span class="text-sm text-gray-200">Ejemplo: Pasadía para hasta 30 personas en día Sábado</span>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-emerald-300 block">Total estimado con los valores ingresados:</span>
+            <span id="price-simulation-total" class="font-serif text-2xl sm:text-3xl font-extrabold text-white">Gs. 1.000.000</span>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200">
+          <button type="button" id="btn-reset-pricing" class="w-full sm:w-auto px-5 py-3 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 font-bold text-xs transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-rotate-left text-gray-400"></i>
+            <span>Restablecer Precios Originales</span>
+          </button>
+
+          <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <a href="index.html#cotizador" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto px-5 py-3 rounded-xl border border-forest-800 text-forest-800 hover:bg-emerald-50 font-bold text-xs transition text-center flex items-center justify-center gap-2">
+              <i class="fa-solid fa-eye"></i>
+              <span>Ver Cotizador en la Web</span>
+            </a>
+
+            <button type="button" id="btn-save-pricing" class="w-full sm:w-auto btn-gold px-8 py-3.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg">
+              <i class="fa-solid fa-floppy-disk"></i>
+              <span>Guardar y Aplicar Tarifas</span>
+            </button>
+          </div>
+        </div>
+
+      </form>
+
+    </section>
+
+  </main>
+
+  <!-- ========================================================================
+       MODAL 1: DETALLE DE FECHA (CALENDARIO)
+       ======================================================================== -->
+  <div id="day-modal" class="fixed inset-0 z-50 bg-black/60 hidden items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative animate-fadeIn">
+      
+      <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-4">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-gold-600 block">Detalle de Fecha</span>
+          <h3 id="day-modal-title" class="font-serif text-xl sm:text-2xl font-bold text-forest-900">
+            Sábado, 12 de Septiembre
+          </h3>
+        </div>
+        <button id="close-day-modal-btn" class="p-2 text-gray-400 hover:text-gray-700 transition rounded-lg">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <div id="day-modal-body" class="space-y-4 mb-6">
+        <!-- Contenido dinámico -->
+      </div>
+
+      <div id="day-modal-actions" class="flex flex-wrap items-center justify-end gap-2 pt-4 border-t border-gray-100">
+        <!-- Botones de acción dinámicos -->
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 2: NUEVA RESERVA MANUAL
+       ======================================================================== -->
+  <div id="new-res-modal" class="fixed inset-0 z-50 bg-black/60 hidden items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative max-h-[90vh] overflow-y-auto">
+      
+      <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-4">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-gold-600 block">Registro Manual</span>
+          <h3 class="font-serif text-xl sm:text-2xl font-bold text-forest-900">
+            Registrar Reserva
+          </h3>
+        </div>
+        <button id="close-new-res-modal-btn" class="p-2 text-gray-400 hover:text-gray-700 transition rounded-lg">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <form id="new-reservation-form" class="space-y-4">
+        <div>
+          <label for="form-client-name" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Nombre del Cliente *</label>
+          <input type="text" id="form-client-name" required placeholder="Ej: Patricia Benítez" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="form-client-phone" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Teléfono / Celular *</label>
+            <input type="tel" id="form-client-phone" required placeholder="Ej: 0981 123456" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+          <div>
+            <label for="form-event-date" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Fecha del Evento *</label>
+            <input type="date" id="form-event-date" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="form-event-type" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Tipo de Evento</label>
+            <select id="form-event-type" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              <option value="Pasadía Familiar">Pasadía Familiar</option>
+              <option value="Cumpleaños / Festejo">Cumpleaños / Festejo</option>
+              <option value="Boda / 15 Años">Boda / 15 Años</option>
+              <option value="Evento Corporativo">Evento Corporativo</option>
+              <option value="Otro">Otro Evento</option>
+            </select>
+          </div>
+          <div>
+            <label for="form-event-guests" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Invitados Aprox.</label>
+            <input type="text" id="form-event-guests" placeholder="Ej: 50 personas" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="form-event-price" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Monto Acordado (Gs.)</label>
+            <input type="number" id="form-event-price" placeholder="Ej: 1200000" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+          <div>
+            <label for="form-event-status" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Estado de Reserva</label>
+            <select id="form-event-status" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800 font-bold text-forest-900">
+              <option value="confirmada">Confirmada (Ocupa Fecha 🔴)</option>
+              <option value="pendiente">Pendiente (Consulta 🟡)</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="form-event-notes" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Notas Adicionales</label>
+          <textarea id="form-event-notes" rows="2" placeholder="Seña abonada, horario específico o requerimientos..." class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+          <button type="button" id="cancel-new-res-btn" class="px-5 py-2.5 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition">
+            Cancelar
+          </button>
+          <button type="submit" class="btn-forest px-6 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow">
+            <i class="fa-solid fa-floppy-disk"></i>
+            <span>Guardar Reserva</span>
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="admin-toast" class="hidden fixed bottom-6 right-6 z-50">
+    <i class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+    <span id="admin-toast-message" class="text-sm font-medium">Operación realizada con éxito</span>
+  </div>
+
+  <!-- Footer Admin -->
+  <footer class="bg-white border-t border-gray-200 py-6 text-center text-xs text-gray-400 mt-auto">
+    <p>© 2026 Quinta Javy'aha Ña Juana-Irene • Panel de Gestión de Disponibilidad y Reservas</p>
+  </footer>
+
+  <!-- Admin Script -->
+  <script src="js/admin.js"></script>
+</body>
+</html>

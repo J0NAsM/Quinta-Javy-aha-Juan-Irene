@@ -78,32 +78,90 @@ function initQuoteCalculator() {
   const form = document.getElementById('quote-form');
   if (!form) return;
 
+  // Cargar configuración de precios parametrizada desde la administración (o usar valores estándar)
+  const STORAGE_KEY_PRICING = 'quinta_pricing_config';
+  let dynamicPricing = null;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_PRICING);
+    if (saved) dynamicPricing = JSON.parse(saved);
+  } catch (e) {
+    console.warn('Error al leer precios personalizados:', e);
+  }
+
   // Precios base referenciales en Guaraníes (Gs.)
   const basePrices = {
-    pasadia: { name: 'Pasadía de Sol & Relax (9:00 a 19:00 hs)', price: 700000 },
-    cumple: { name: 'Cumpleaños / Festejo Privado (13:00 a 01:00 hs)', price: 1200000 },
-    boda_15: { name: 'Boda / 15 Años Soñado (Exclusividad Completa)', price: 2000000 },
-    corporativo: { name: 'Encuentro Corporativo / Retiro', price: 1500000 }
+    pasadia: { 
+      name: 'Pasadía de Sol & Relax (9:00 a 19:00 hs)', 
+      price: (dynamicPricing && dynamicPricing.basePrices && dynamicPricing.basePrices.pasadia) || 700000 
+    },
+    cumple: { 
+      name: 'Cumpleaños / Festejo Privado (13:00 a 01:00 hs)', 
+      price: (dynamicPricing && dynamicPricing.basePrices && dynamicPricing.basePrices.cumple) || 1200000 
+    },
+    boda_15: { 
+      name: 'Boda / 15 Años Soñado (Exclusividad Completa)', 
+      price: (dynamicPricing && dynamicPricing.basePrices && dynamicPricing.basePrices.boda) || 2000000 
+    },
+    corporativo: { 
+      name: 'Encuentro Corporativo / Retiro', 
+      price: (dynamicPricing && dynamicPricing.basePrices && dynamicPricing.basePrices.corporativo) || 1500000 
+    }
   };
 
   const guestPrices = {
-    '30': { name: 'Hasta 30 personas', extra: 0 },
-    '80': { name: '30 a 80 personas', extra: 300000 },
-    '150': { name: '80 a 150 personas', extra: 600000 },
-    '300': { name: '150 a 300+ personas', extra: 1000000 }
+    '30': { 
+      name: 'Hasta 30 personas', 
+      extra: (dynamicPricing && dynamicPricing.guestPrices && dynamicPricing.guestPrices['30'] !== undefined) ? dynamicPricing.guestPrices['30'] : 0 
+    },
+    '80': { 
+      name: '30 a 80 personas', 
+      extra: (dynamicPricing && dynamicPricing.guestPrices && dynamicPricing.guestPrices['80'] !== undefined) ? dynamicPricing.guestPrices['80'] : 300000 
+    },
+    '150': { 
+      name: '80 a 150 personas', 
+      extra: (dynamicPricing && dynamicPricing.guestPrices && dynamicPricing.guestPrices['150'] !== undefined) ? dynamicPricing.guestPrices['150'] : 600000 
+    },
+    '300': { 
+      name: '150 a 300+ personas', 
+      extra: (dynamicPricing && dynamicPricing.guestPrices && dynamicPricing.guestPrices['300'] !== undefined) ? dynamicPricing.guestPrices['300'] : 1000000 
+    }
   };
 
   const dayMultipliers = {
-    'semana': { name: 'Lunes a Jueves (Día de semana)', discount: 0.15, extra: 0 },
-    'viernes': { name: 'Viernes', discount: 0, extra: 150000 },
-    'finde': { name: 'Sábado, Domingo o Feriado', discount: 0, extra: 300000 }
+    'semana': { 
+      name: 'Lunes a Jueves (Día de semana)', 
+      discount: (dynamicPricing && dynamicPricing.dayMultipliers && dynamicPricing.dayMultipliers.semanaDiscount !== undefined) ? (dynamicPricing.dayMultipliers.semanaDiscount / 100) : 0.15, 
+      extra: 0 
+    },
+    'viernes': { 
+      name: 'Viernes', 
+      discount: 0, 
+      extra: (dynamicPricing && dynamicPricing.dayMultipliers && dynamicPricing.dayMultipliers.viernes !== undefined) ? dynamicPricing.dayMultipliers.viernes : 150000 
+    },
+    'finde': { 
+      name: 'Sábado, Domingo o Feriado', 
+      discount: 0, 
+      extra: (dynamicPricing && dynamicPricing.dayMultipliers && dynamicPricing.dayMultipliers.finde !== undefined) ? dynamicPricing.dayMultipliers.finde : 300000 
+    }
   };
 
   const extraServices = {
-    'luces': { name: 'Guirnaldas & Luces Cálidas Nocturnas', price: 200000 },
-    'parrillero': { name: 'Asistente de Parrilla / Asador', price: 250000 },
-    'mobiliario': { name: 'Mesas y Sillas Adicionales', price: 200000 },
-    'cancha': { name: 'Iluminación Especial de Áreas Verdes & Cancha', price: 150000 }
+    'luces': { 
+      name: 'Guirnaldas & Luces Cálidas Nocturnas', 
+      price: (dynamicPricing && dynamicPricing.extraServices && dynamicPricing.extraServices.luces !== undefined) ? dynamicPricing.extraServices.luces : 200000 
+    },
+    'parrillero': { 
+      name: 'Asistente de Parrilla / Asador', 
+      price: (dynamicPricing && dynamicPricing.extraServices && dynamicPricing.extraServices.parrillero !== undefined) ? dynamicPricing.extraServices.parrillero : 250000 
+    },
+    'mobiliario': { 
+      name: 'Mesas y Sillas Adicionales', 
+      price: (dynamicPricing && dynamicPricing.extraServices && dynamicPricing.extraServices.mobiliario !== undefined) ? dynamicPricing.extraServices.mobiliario : 200000 
+    },
+    'cancha': { 
+      name: 'Iluminación Especial de Áreas Verdes & Cancha', 
+      price: (dynamicPricing && dynamicPricing.extraServices && dynamicPricing.extraServices.cancha !== undefined) ? dynamicPricing.extraServices.cancha : 150000 
+    }
   };
 
   // State
@@ -352,7 +410,7 @@ function initFaqAccordion() {
 }
 
 /* ==========================================================================
-   6. Formulario de Contacto Rápido hacia WhatsApp
+   6. Formulario de Contacto Rápido hacia WhatsApp y Registro de Petición
    ========================================================================== */
 function initContactForm() {
   const contactForm = document.getElementById('contact-booking-form');
@@ -372,6 +430,31 @@ function initContactForm() {
       return;
     }
 
+    // Registrar la petición en LocalStorage para que el administrador la vea en admin.html
+    try {
+      const STORAGE_KEY = 'quinta_reservations';
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const list = stored ? JSON.parse(stored) : [];
+
+      const newInquiry = {
+        id: 'web-' + Date.now(),
+        clientName: name,
+        phone: phone,
+        date: date || new Date().toISOString().split('T')[0],
+        eventType: 'Consulta Web General',
+        guests: guests || 'Por definir',
+        estimatedPrice: 1000000,
+        status: 'pendiente',
+        notes: message || 'Enviado desde el formulario de contacto web.',
+        createdAt: new Date().toISOString()
+      };
+
+      list.unshift(newInquiry);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch (err) {
+      console.warn('Error al almacenar consulta en LocalStorage:', err);
+    }
+
     const text = `¡Hola Quinta Javy'aha Ña Juana-Irene! 🌿\n\nMi nombre es *${name}* (${phone}).\n` +
       `Me comunico desde el portal web para consultar reserva:\n` +
       `📅 Fecha tentativa: ${date ? date : 'A coordinar'}\n` +
@@ -385,7 +468,7 @@ function initContactForm() {
 }
 
 /* ==========================================================================
-   7. Chequeador Rápido de Disponibilidad de Fechas
+   7. Chequeador Rápido de Disponibilidad de Fechas (Sincronizado)
    ========================================================================== */
 function initDateAvailabilityChecker() {
   const quickDateBtn = document.getElementById('quick-check-date-btn');
@@ -411,8 +494,42 @@ function initDateAvailabilityChecker() {
       day: 'numeric'
     });
 
-    const msg = `¡Hola Quinta Javy'aha! 🌿\nQuisiera saber si tienen disponibilidad para el día *${formattedDate}*. ¿Podrían confirmarme precios y horarios? ¡Gracias!`;
+    // Consultar disponibilidad en LocalStorage
+    let isOccupied = false;
+    let isPending = false;
+
+    try {
+      const storedRes = localStorage.getItem('quinta_reservations');
+      const storedBlocked = localStorage.getItem('quinta_blocked_dates');
+
+      const reservations = storedRes ? JSON.parse(storedRes) : [];
+      const blockedDates = storedBlocked ? JSON.parse(storedBlocked) : [];
+
+      if (blockedDates.includes(selectedDate)) {
+        isOccupied = true;
+      } else {
+        const conf = reservations.find(r => r.date === selectedDate && r.status === 'confirmada');
+        if (conf) isOccupied = true;
+
+        const pend = reservations.find(r => r.date === selectedDate && r.status === 'pendiente');
+        if (pend) isPending = true;
+      }
+    } catch (e) {
+      console.warn('Error al verificar disponibilidad local:', e);
+    }
+
+    let statusNotice = '';
+    if (isOccupied) {
+      statusNotice = `\n(⚠️ Nota: En el sistema figura como Ocupada, pero consulto por si hay opciones alternativas o lista de espera).`;
+    } else if (isPending) {
+      statusNotice = `\n(🟡 Nota: Veo en el sistema que tiene una consulta previa, quisiera confirmar si aún sigue libre).`;
+    } else {
+      statusNotice = `\n(🟢 Veo que figura DISPONIBLE en la web y me gustaría reservarla).`;
+    }
+
+    const msg = `¡Hola Quinta Javy'aha! 🌿\nQuisiera saber la disponibilidad para el día *${formattedDate}*.${statusNotice}\n¿Podrían confirmarme precios y horarios? ¡Gracias!`;
     const waUrl = `https://wa.me/595972783547?text=${encodeURIComponent(msg)}`;
     window.open(waUrl, '_blank');
   });
 }
+
