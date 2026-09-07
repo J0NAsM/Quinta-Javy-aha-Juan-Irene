@@ -1,0 +1,357 @@
+/* ==========================================================================
+   Quinta Javy'aha Ña Juana-Irene - Estilos Principales
+   Carapeguá, Paraguarí, Paraguay
+   ========================================================================== */
+
+:root {
+  --color-primary: #1b4332;       /* Verde bosque profundo */
+  --color-primary-light: #2d6a4f; /* Verde esmeralda campestre */
+  --color-primary-dark: #081c15;  /* Bosque oscuro */
+  --color-accent: #d4a373;        /* Dorado / Madera cálida */
+  --color-accent-light: #faedcd;  /* Crema cálido suave */
+  --color-accent-dark: #bc6c25;   /* Canela tostada */
+  --color-whatsapp: #25d366;     /* Verde WhatsApp */
+  --color-whatsapp-hover: #20ba59;
+  --color-text-main: #1f2937;
+  --color-text-muted: #4b5563;
+  --color-bg-light: #fbfbf9;
+  --color-bg-card: #ffffff;
+  
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  
+  --shadow-sm: 0 2px 8px rgba(27, 67, 50, 0.06);
+  --shadow-md: 0 10px 25px -5px rgba(27, 67, 50, 0.1), 0 8px 10px -6px rgba(27, 67, 50, 0.05);
+  --shadow-lg: 0 20px 35px -5px rgba(27, 67, 50, 0.15), 0 10px 15px -5px rgba(27, 67, 50, 0.08);
+  --shadow-glow: 0 0 25px rgba(212, 163, 115, 0.4);
+}
+
+/* Base & Typography */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-text-main);
+  background-color: var(--color-bg-light);
+  overflow-x: hidden;
+}
+
+h1, h2, h3, .font-serif {
+  font-family: var(--font-serif);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary-light);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* Glassmorphism & Header */
+.glass-nav {
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(27, 67, 50, 0.08);
+  transition: all 0.3s ease;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.glass-dark {
+  background: rgba(8, 28, 21, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Hero Section */
+.hero-bg {
+  position: relative;
+  background-image: linear-gradient(180deg, rgba(8, 28, 21, 0.65) 0%, rgba(8, 28, 21, 0.82) 100%), url('https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=1920&auto=format&fit=crop');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Floating WhatsApp Button with Ripple Effect */
+.whatsapp-float {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.whatsapp-icon-btn {
+  width: 64px;
+  height: 64px;
+  background-color: var(--color-whatsapp);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  box-shadow: 0 10px 25px rgba(37, 211, 102, 0.45);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  position: relative;
+}
+
+.whatsapp-icon-btn:hover {
+  transform: scale(1.12) rotate(6deg);
+  background-color: var(--color-whatsapp-hover);
+  box-shadow: 0 15px 30px rgba(37, 211, 102, 0.6);
+}
+
+.whatsapp-pulse {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(37, 211, 102, 0.6);
+  animation: pulse-wave 2s infinite;
+  z-index: -1;
+}
+
+@keyframes pulse-wave {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+.whatsapp-badge-pill {
+  background: white;
+  color: #111827;
+  padding: 9px 18px;
+  border-radius: 30px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  display: none;
+  border-left: 4px solid var(--color-whatsapp);
+  white-space: nowrap;
+  animation: fadeInRight 0.5s ease;
+}
+
+@media (min-width: 768px) {
+  .whatsapp-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+/* Cotizador Interactivo */
+.quote-card {
+  background: white;
+  border-radius: 24px;
+  box-shadow: 0 20px 40px -15px rgba(27, 67, 50, 0.12);
+  border: 1px solid rgba(212, 163, 115, 0.3);
+  transition: all 0.3s ease;
+}
+
+.option-pill {
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border: 2px solid #e5e7eb;
+}
+
+.option-pill:hover {
+  border-color: var(--color-primary-light);
+  transform: translateY(-2px);
+}
+
+.option-pill.active {
+  background-color: #ecfdf5;
+  border-color: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  box-shadow: 0 4px 14px rgba(45, 106, 79, 0.18);
+  font-weight: 600;
+}
+
+/* Galería y Filtros */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.gallery-item {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  height: 290px;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), box-shadow 0.4s ease;
+}
+
+.gallery-item:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-lg);
+}
+
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s ease;
+}
+
+.gallery-item:hover img {
+  transform: scale(1.08);
+}
+
+.gallery-caption {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(8, 28, 21, 0.92) 0%, rgba(8, 28, 21, 0.3) 60%, transparent 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 1.5rem;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.gallery-item:hover .gallery-caption {
+  opacity: 1;
+}
+
+/* Lightbox Modal */
+.lightbox-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.94);
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  backdrop-filter: blur(8px);
+}
+
+.lightbox-modal.active {
+  display: flex;
+  opacity: 1;
+}
+
+.lightbox-content {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+}
+
+/* FAQ Accordion */
+.faq-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.faq-icon {
+  transition: transform 0.3s ease;
+}
+
+.faq-item.open .faq-icon {
+  transform: rotate(180deg);
+}
+
+.faq-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease-out, padding 0.35s ease;
+}
+
+.faq-item.open .faq-body {
+  max-height: 500px;
+  padding-top: 1rem;
+}
+
+/* Buttons */
+.btn-gold {
+  background: linear-gradient(135deg, #d4a373 0%, #bc6c25 100%);
+  color: white;
+  box-shadow: 0 6px 18px rgba(188, 108, 37, 0.35);
+  transition: all 0.3s ease;
+}
+.btn-gold:hover {
+  background: linear-gradient(135deg, #e0b484 0%, #a85f1e 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(188, 108, 37, 0.45);
+}
+
+.btn-forest {
+  background: linear-gradient(135deg, #1b4332 0%, #2d6a4f 100%);
+  color: white;
+  box-shadow: 0 6px 18px rgba(27, 67, 50, 0.35);
+  transition: all 0.3s ease;
+}
+.btn-forest:hover {
+  background: linear-gradient(135deg, #2d6a4f 0%, #1b4332 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(27, 67, 50, 0.45);
+}
+
+/* Custom badge */
+.badge-tag {
+  background-color: #e8f5e9;
+  color: #1b4332;
+  font-weight: 600;
+  border-radius: 9999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* Feature cards */
+.feature-card {
+  transition: all 0.35s ease;
+}
+.feature-card:hover {
+  transform: translateY(-8px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Animations */
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(25px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
