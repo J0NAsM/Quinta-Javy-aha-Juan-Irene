@@ -13,7 +13,38 @@ document.addEventListener('DOMContentLoaded', () => {
   initFaqAccordion();
   initContactForm();
   initDateAvailabilityChecker();
+  initMaintenanceMode();
 });
+
+/* ==========================================================================
+   8. Modo Mantenimiento (controlado desde el panel admin)
+   ========================================================================== */
+function initMaintenanceMode() {
+  let maintenance = false;
+  try {
+    const s = localStorage.getItem('quinta_settings');
+    if (s) maintenance = !!JSON.parse(s).maintenanceMode;
+  } catch (e) { /* sin configuración = sitio normal */ }
+  if (!maintenance) return;
+
+  const banner = document.createElement('div');
+  banner.className = 'bg-amber-100 border-b border-amber-300 text-amber-900 text-xs sm:text-sm text-center px-4 py-2.5 font-semibold';
+  banner.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i> Reservas en pausa por mantenimiento. Escríbenos por WhatsApp y te avisamos al reabrir.';
+  document.body.prepend(banner);
+
+  const form = document.getElementById('contact-booking-form');
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      alert('Reservas en pausa por mantenimiento. Contáctanos por WhatsApp.');
+    }, true);
+    form.querySelectorAll('input, textarea, select, button[type="submit"]').forEach(el => {
+      el.disabled = true;
+      el.classList.add('opacity-60');
+    });
+  }
+}
 
 /* ==========================================================================
    1. Menú Móvil y Navegación
@@ -157,10 +188,6 @@ function initQuoteCalculator() {
     'mobiliario': { 
       name: 'Mesas y Sillas Adicionales', 
       price: (dynamicPricing && dynamicPricing.extraServices && dynamicPricing.extraServices.mobiliario !== undefined) ? dynamicPricing.extraServices.mobiliario : 200000 
-    },
-    'cancha': { 
-      name: 'Iluminación Especial de Áreas Verdes & Cancha', 
-      price: (dynamicPricing && dynamicPricing.extraServices && dynamicPricing.extraServices.cancha !== undefined) ? dynamicPricing.extraServices.cancha : 150000 
     }
   };
 
@@ -223,26 +250,106 @@ function initQuoteCalculator() {
     return 'Gs. ' + amount.toLocaleString('es-PY');
   }
 
-  function updateCalculation() {
-    let total = basePrices[selectedEvent].price;
-    total += guestPrices[selectedGuests].extra;
+  // Motor nuevo: usa espacios/turnos/reglas del panel admin si existen.
+  // Mapea la selección pública a espacios + turno + fecha representativa.
+  function computeQuoteNew() {
+    try {
+      const spaces = JSON.parse(localStorage.getItem('quinta_spaces') || 'null');
+      const turns = JSON.parse(localStorage.getItem('quinta_turns') || 'null');
+      const rules = JSON.parse(localStorage.getItem('quinta_pricing_rules') || 'null');
+      const services = JSON.parse(localStorage.getItem('quinta_services') || 'null');
+      if (!spaces || !turns || !rules) return null;
 
-    const dayConfig = dayMultipliers[selectedDay];
-    if (dayConfig.discount > 0) {
-      total = Math.round(total * (1 - dayConfig.discount));
-    }
-    total += dayConfig.extra;
+      const eventMap = {
+        pasadia: { spaces: ['piscina', 'quincho'], turn: 'dia_completo' },
+        cumple: { spaces: ['salon', 'piscina'], turn: 'noche' },
+        boda_15: { spaces: ['salon', 'piscina', 'quincho'], turn: 'dia_completo' },
+        corporativo: { spaces: ['salon'], turn: 'dia_completo' }
+      };
+      const guestCount = { '30': 30, '80': 80, '150': 150, '300': 300 }[selectedGuests] || 30;
+      const dayDow = { semana: 2, viernes: 5, finde: 6 }[selectedDay] ?? 6;
+      // Fecha representativa real (próximo día de ese tipo) para que apliquen temporadas/fechas
+      const t = new Date(); let add = 0;
+      while (new Date(t.getFullYear(), t.getMonth(), t.getDate() + add).getDay() !== dayDow) add++;
+      const ref = new Date(t.getFullYear(), t.getMonth(), t.getDate() + add);
+      const dateStr = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}-${String(ref.getDate()).padStart(2, '0')}`;
 
-    let extrasTotal = 0;
-    const extrasListNames = [];
-    selectedExtras.forEach(key => {
-      if (extraServices[key]) {
-        extrasTotal += extraServices[key].price;
-        extrasListNames.push(extraServices[key].name);
+      const cfg = eventMap[selectedEvent] || eventMap.pasadia;
+      const spaceIds = cfg.spaces.filter(id => spaces.some(s => s.id === id && s.active !== false));
+      const turn = turns.find(x => x.id === cfg.turn) || {};
+      const toMin = (s) => { const [h, m] = String(s || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
+      let hrs = 8;
+      if (turn.startTime && turn.endTime) {
+        hrs = (toMin(turn.endTime) - toMin(turn.startTime)) / 60;
+        if (hrs <= 0) hrs += 24;
       }
-    });
+      const sorted = rules.filter(r => r.active !== false).sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      let total = 0;
+      const detail = [];
+      (spaceIds.length ? spaceIds : spaces.filter(s => s.active !== false).map(s => s.id)).forEach(sid => {
+        const sp = spaces.find(s => s.id === sid) || {};
+        let applied = null;
+        for (const rule of sorted) {
+          const c = rule.conditions || {};
+          if (c.spaces && c.spaces.length && !c.spaces.includes(sid)) continue;
+          if (c.turns && c.turns.length && !c.turns.includes(cfg.turn)) continue;
+          if (c.daysOfWeek && c.daysOfWeek.length && !c.daysOfWeek.includes(dayDow)) continue;
+          if (c.specificDates && c.specificDates.length && !c.specificDates.includes(dateStr)) continue;
+          if (c.dateRange && c.dateRange.from && c.dateRange.to && (dateStr < c.dateRange.from || dateStr > c.dateRange.to)) continue;
+          if (c.guestRange && (guestCount < (c.guestRange.min || 0) || guestCount > (c.guestRange.max || 9999))) continue;
+          if (c.minDuration && hrs < c.minDuration) continue;
+          applied = rule; break;
+        }
+        let price = sp.basePrice || 0;
+        if (applied) {
+          const pr = applied.pricing || {};
+          if ((pr.type || 'fixed') === 'hourly') price = Math.round((pr.perHour || 0) * hrs);
+          else if (pr.type === 'per_person') price = Math.round((pr.perPerson || 0) * guestCount);
+          else price = pr.basePrice || 0;
+          (applied.discounts || []).forEach(d => { if (d.percent && (!d.days || d.days.includes(dayDow))) price = Math.round(price * (1 - d.percent / 100)); });
+          (applied.surcharges || []).forEach(s => { if (s.fixed) price += s.fixed; else if (s.percent) price = Math.round(price * (1 + s.percent / 100)); });
+        }
+        total += price;
+        detail.push(`${sp.shortName || sp.name || sid}: ${formatGs(price)}`);
+      });
 
-    total += extrasTotal;
+      const extrasListNames = [];
+      selectedExtras.forEach(key => {
+        const svc = (services || []).find(s => s.key === key && s.active !== false);
+        if (svc) { total += svc.price || 0; extrasListNames.push(svc.name); }
+        else if (extraServices[key]) { total += extraServices[key].price; extrasListNames.push(extraServices[key].name); }
+      });
+      return { total, extrasListNames, detail, refDate: dateStr };
+    } catch (e) { return null; }
+  }
+
+  function updateCalculation() {
+    const fresh = computeQuoteNew();
+    let total, extrasListNames;
+    if (fresh) {
+      total = fresh.total;
+      extrasListNames = fresh.extrasListNames;
+    } else {
+      total = basePrices[selectedEvent].price;
+      total += guestPrices[selectedGuests].extra;
+
+      const dayConfig = dayMultipliers[selectedDay];
+      if (dayConfig.discount > 0) {
+        total = Math.round(total * (1 - dayConfig.discount));
+      }
+      total += dayConfig.extra;
+
+      let extrasTotal = 0;
+      extrasListNames = [];
+      selectedExtras.forEach(key => {
+        if (extraServices[key]) {
+          extrasTotal += extraServices[key].price;
+          extrasListNames.push(extraServices[key].name);
+        }
+      });
+
+      total += extrasTotal;
+    }
 
     // Actualizar vista
     if (priceDisplay) {
@@ -255,7 +362,7 @@ function initQuoteCalculator() {
     // Construir mensaje de WhatsApp
     const eventName = basePrices[selectedEvent].name;
     const guestsName = guestPrices[selectedGuests].name;
-    const dayName = dayConfig.name;
+    const dayName = dayMultipliers[selectedDay].name;
     const extrasText = extrasListNames.length > 0 ? extrasListNames.join(', ') : 'Ninguno por ahora';
 
     const rawMessage = `¡Hola Quinta Javy'aha Ña Juana-Irene! 🌿✨\n\nEstuve cotizando en su portal web y me gustaría consultar disponibilidad:\n\n` +
@@ -263,7 +370,7 @@ function initQuoteCalculator() {
       `👥 Capacidad estimada: ${guestsName}\n` +
       `📅 Tipo de fecha: ${dayName}\n` +
       `✨ Servicios extra: ${extrasText}\n` +
-      `💰 Estimado en web: ${formatGs(total)}\n\n` +
+      `💰 Estimado en web: ${formatGs(total)}${fresh ? `\n🧾 Desglose: ${fresh.detail.join(' · ')}` : ''}\n\n` +
       `¿Tendrían fecha disponible próximamente? ¡Muchas gracias!`;
 
     const phone = '595972783547';

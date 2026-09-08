@@ -51,6 +51,8 @@
 
   <!-- Estilos Personalizados del Portal -->
   <link rel="stylesheet" href="css/styles.css">
+  <!-- Chart.js para dashboard financiero -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body class="bg-[#f7f8f6] text-gray-800 antialiased min-h-screen flex flex-col font-sans">
 
@@ -79,7 +81,7 @@
       </div>
 
       <!-- Quick Actions -->
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3" id="header-actions">
         <a href="index.html" class="bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-2 border border-white/10">
           <i class="fa-solid fa-arrow-up-right-from-square text-xs text-gold-400"></i>
           <span class="hidden sm:inline">Ver Sitio Público</span>
@@ -88,6 +90,8 @@
           <i class="fa-solid fa-plus"></i>
           <span>Nueva Reserva</span>
         </button>
+        <!-- User info will be injected here after login -->
+        <div id="header-user-info"></div>
       </div>
 
     </div>
@@ -97,6 +101,9 @@
        MAIN DASHBOARD CONTENT
        ======================================================================== -->
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+
+    <!-- 0. PANEL DE ALERTAS -->
+    <div id="alerts-panel" class="space-y-2"></div>
 
     <!-- 1. KPI Cards Row -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -152,20 +159,59 @@
     </div>
 
     <!-- TABS DE NAVEGACIÓN PRINCIPAL DEL PANEL -->
-    <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
+    <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3" id="main-tabs">
       <button id="nav-btn-calendar" class="admin-tab-btn active px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-forest-800 text-white shadow transition flex items-center gap-2" data-tab="calendar">
         <i class="fa-solid fa-calendar-days text-gold-400"></i>
-        <span>Calendario de Disponibilidad</span>
+        <span>Calendario</span>
       </button>
       <button id="nav-btn-reservations" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="reservations">
         <i class="fa-solid fa-inbox text-amber-500"></i>
-        <span>Peticiones Web</span>
+        <span>Reservas</span>
         <span id="nav-pending-badge" class="px-2 py-0.5 rounded-full text-[0.68rem] bg-amber-100 text-amber-800 font-extrabold ml-1">0</span>
       </button>
-      <button id="nav-btn-pricing" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="pricing">
-        <i class="fa-solid fa-tags text-emerald-600"></i>
-        <span>Tarifas y Precios</span>
-        <span class="px-2 py-0.5 rounded-full text-[0.65rem] bg-emerald-100 text-emerald-800 font-bold ml-1">Configurable</span>
+      <button id="nav-btn-spaces" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="spaces">
+        <i class="fa-solid fa-building-columns text-cyan-600"></i>
+        <span>Espacios</span>
+      </button>
+      <button id="nav-btn-turns" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="turns">
+        <i class="fa-solid fa-clock text-amber-500"></i>
+        <span>Turnos</span>
+      </button>
+      <button id="nav-btn-pricing-rules" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="pricing-rules">
+        <i class="fa-solid fa-sliders text-emerald-600"></i>
+        <span>Reglas Precio</span>
+      </button>
+      <button id="nav-btn-services" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="services">
+        <i class="fa-solid fa-concierge-bell text-purple-600"></i>
+        <span>Servicios</span>
+      </button>
+      <button id="nav-btn-finances" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="finances">
+        <i class="fa-solid fa-chart-line text-emerald-600"></i>
+        <span>Finanzas</span>
+      </button>
+      <button id="nav-btn-incomes" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="incomes">
+        <i class="fa-solid fa-arrow-down-to-bracket text-green-600"></i>
+        <span>Ingresos</span>
+      </button>
+      <button id="nav-btn-expenses" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="expenses">
+        <i class="fa-solid fa-arrow-up-from-bracket text-red-600"></i>
+        <span>Egresos</span>
+      </button>
+      <button id="nav-btn-profitability" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="profitability">
+        <i class="fa-solid fa-chart-bar text-blue-600"></i>
+        <span>Rentabilidad</span>
+      </button>
+      <button id="nav-btn-users" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="users">
+        <i class="fa-solid fa-users-cog text-indigo-600"></i>
+        <span>Usuarios</span>
+      </button>
+      <button id="nav-btn-audit" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="audit">
+        <i class="fa-solid fa-clipboard-list text-gray-600"></i>
+        <span>Auditoría</span>
+      </button>
+      <button id="nav-btn-settings" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="settings">
+        <i class="fa-solid fa-gear text-gray-500"></i>
+        <span>Configuración</span>
       </button>
     </div>
 
@@ -184,16 +230,23 @@
         </div>
 
         <!-- Navigation Buttons -->
-        <div class="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-          <button id="cal-prev-btn" class="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 transition" aria-label="Mes anterior">
-            <i class="fa-solid fa-chevron-left text-sm"></i>
-          </button>
-          <button id="cal-today-btn" class="px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-100 text-xs font-bold text-gray-700 transition">
-            Hoy
-          </button>
-          <button id="cal-next-btn" class="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 transition" aria-label="Mes siguiente">
-            <i class="fa-solid fa-chevron-right text-sm"></i>
-          </button>
+        <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+          <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1" role="tablist" aria-label="Vista de calendario">
+            <button class="cal-view-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-forest-800 text-white shadow transition" data-view="month">Mes</button>
+            <button class="cal-view-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-view="week">Semana</button>
+            <button class="cal-view-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-view="day">Día</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="cal-prev-btn" class="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 transition" aria-label="Anterior">
+              <i class="fa-solid fa-chevron-left text-sm"></i>
+            </button>
+            <button id="cal-today-btn" class="px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-100 text-xs font-bold text-gray-700 transition">
+              Hoy
+            </button>
+            <button id="cal-next-btn" class="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 transition" aria-label="Siguiente">
+              <i class="fa-solid fa-chevron-right text-sm"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -221,8 +274,8 @@
         </div>
       </div>
 
-      <!-- Weekday Headers -->
-      <div class="grid grid-cols-7 gap-2 mt-4 text-center text-xs font-extrabold uppercase tracking-wider text-gray-500 pb-2">
+      <!-- Weekday Headers (solo vista mes) -->
+      <div id="cal-weekday-headers" class="grid grid-cols-7 gap-2 mt-4 text-center text-xs font-extrabold uppercase tracking-wider text-gray-500 pb-2">
         <span>Lun</span>
         <span>Mar</span>
         <span>Mié</span>
@@ -232,9 +285,19 @@
         <span class="text-forest-800 font-black">Dom</span>
       </div>
 
-      <!-- Days Grid Container -->
+      <!-- Days Grid Container (vista mes) -->
       <div id="cal-days-grid" class="grid grid-cols-7 gap-1.5 sm:gap-2.5 mt-1">
         <!-- Renderizado dinámico desde admin.js -->
+      </div>
+
+      <!-- Vista semana: columnas por día con turnos -->
+      <div id="cal-week-grid" class="hidden mt-4 overflow-x-auto">
+        <!-- Renderizado dinámico -->
+      </div>
+
+      <!-- Vista día: matriz espacios x turnos -->
+      <div id="cal-day-grid" class="hidden mt-4 space-y-3">
+        <!-- Renderizado dinámico -->
       </div>
 
     </section>
@@ -276,6 +339,19 @@
         <button class="filter-tab-btn px-4 py-1.5 rounded-xl text-xs font-bold bg-white text-gray-600 hover:bg-gray-100 transition border border-gray-200" data-filter="cancelada">
           Canceladas / Liberadas
         </button>
+      </div>
+
+      <!-- Filtros avanzados: espacio, turno, fechas -->
+      <div class="flex flex-wrap items-center gap-2">
+        <select id="filter-res-space" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          <option value="">Todos los espacios</option>
+        </select>
+        <select id="filter-res-turn" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          <option value="">Todos los turnos</option>
+        </select>
+        <input type="date" id="filter-res-from" title="Desde" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+        <input type="date" id="filter-res-to" title="Hasta" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+        <button id="btn-clear-res-filters" class="px-3 py-2 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-100 border border-gray-200">Limpiar</button>
       </div>
 
       <!-- Reservations Table / Cards Container -->
@@ -503,15 +579,7 @@
                 </div>
               </div>
 
-              <div>
-                <label for="price-extra-cancha" class="block text-xs font-bold text-gray-700 mb-1">
-                  ⚽ Iluminación Especial Áreas Verdes & Cancha
-                </label>
-                <div class="relative">
-                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">Gs.</span>
-                  <input type="number" step="10000" id="price-extra-cancha" class="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="150000">
-                </div>
-              </div>
+
             </div>
           </div>
 
@@ -551,6 +619,380 @@
 
       </form>
 
+    </section>
+
+    <!-- ========================================================================
+         NUEVAS SECCIONES - MÓDULOS AVANZADOS
+         ======================================================================== -->
+
+    <!-- ESPACIOS -->
+    <section id="section-spaces" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-building-columns text-cyan-600"></i> Gestión de Espacios</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Espacios Alquilables</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Configura los espacios que pueden alquilarse de forma independiente o combinada</p>
+        </div>
+        <button id="btn-add-space" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+          <i class="fa-solid fa-plus"></i> <span>Nuevo Espacio</span>
+        </button>
+      </div>
+      <div id="spaces-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+
+    <!-- TURNOS -->
+    <section id="section-turns" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-clock text-amber-500"></i> Modalidades de Alquiler</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Turnos y Horarios</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Define los horarios disponibles para cada espacio</p>
+        </div>
+        <button id="btn-add-turn" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+          <i class="fa-solid fa-plus"></i> <span>Nuevo Turno</span>
+        </button>
+      </div>
+      <div id="turns-list" class="space-y-3"></div>
+    </section>
+
+    <!-- REGLAS DE PRECIO -->
+    <section id="section-pricing-rules" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-sliders text-emerald-600"></i> Reglas de Precio Avanzadas</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Motor de Precios</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Reglas flexibles por espacio, turno, día, temporada, fecha y duración</p>
+        </div>
+        <button id="btn-add-pricing-rule" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+          <i class="fa-solid fa-plus"></i> <span>Nueva Regla</span>
+        </button>
+      </div>
+      <div id="pricing-rules-list" class="space-y-3"></div>
+    </section>
+
+    <!-- SERVICIOS -->
+    <section id="section-services" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-concierge-bell text-purple-600"></i> Servicios Adicionales</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Servicios Opcionales</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Extras que se pueden agregar a las reservas (luces, parrillero, mobiliario, etc.)</p>
+        </div>
+        <button id="btn-add-service" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+          <i class="fa-solid fa-plus"></i> <span>Nuevo Servicio</span>
+        </button>
+      </div>
+      <div id="services-list" class="space-y-3"></div>
+    </section>
+
+    <!-- FINANZAS - DASHBOARD -->
+    <section id="section-finances" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-chart-line text-emerald-600"></i> Dashboard Financiero</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Resumen Económico</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Visión general de ingresos, egresos y rentabilidad</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <select id="finance-period" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+            <option value="month">Este Mes</option>
+            <option value="quarter">Este Trimestre</option>
+            <option value="year">Este Año</option>
+            <option value="custom">Personalizado</option>
+          </select>
+          <button id="btn-export-finances" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow">
+            <i class="fa-solid fa-download"></i> Exportar
+          </button>
+        </div>
+      </div>
+
+      <!-- KPIs Financieros -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4" id="finance-kpis">
+        <!-- Renderizado dinámico -->
+      </div>
+
+      <!-- Gráficos -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-gray-50/50 rounded-2xl p-5 border border-gray-200">
+          <h4 class="font-bold text-gray-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-column text-emerald-600"></i> Ingresos vs Egresos Mensuales</h4>
+          <canvas id="chart-income-expense" height="250"></canvas>
+        </div>
+        <div class="bg-gray-50/50 rounded-2xl p-5 border border-gray-200">
+          <h4 class="font-bold text-gray-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-amber-600"></i> Gastos por Categoría</h4>
+          <canvas id="chart-expenses-category" height="250"></canvas>
+        </div>
+        <div class="bg-gray-50/50 rounded-2xl p-5 border border-gray-200">
+          <h4 class="font-bold text-gray-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-bar text-blue-600"></i> Ingresos por Tipo de Espacio</h4>
+          <canvas id="chart-income-space" height="250"></canvas>
+        </div>
+        <div class="bg-gray-50/50 rounded-2xl p-5 border border-gray-200">
+          <h4 class="font-bold text-gray-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-chart-line text-purple-600"></i> Rentabilidad por Espacio</h4>
+          <canvas id="chart-profitability" height="250"></canvas>
+        </div>
+      </div>
+
+      <!-- Top meses con más reservas y ganancias -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-gray-50/50 rounded-2xl p-5 border border-gray-200">
+          <h4 class="font-bold text-gray-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-trophy text-amber-500"></i> Top Meses - Más Reservas</h4>
+          <div id="top-months-reservations" class="space-y-2"></div>
+        </div>
+        <div class="bg-gray-50/50 rounded-2xl p-5 border border-gray-200">
+          <h4 class="font-bold text-gray-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-medal text-yellow-500"></i> Top Meses - Más Ganancias</h4>
+          <div id="top-months-revenue" class="space-y-2"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INGRESOS -->
+    <section id="section-incomes" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-arrow-down-to-bracket text-green-600"></i> Registro de Ingresos</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Ingresos Contables</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Todos los ingresos registrados (automáticos de reservas + manuales)</p>
+        </div>
+        <button id="btn-add-income" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+          <i class="fa-solid fa-plus"></i> <span>Registrar Ingreso</span>
+        </button>
+      </div>
+      <div class="flex flex-wrap gap-2 mb-4">
+        <input type="text" id="search-incomes" placeholder="Buscar cliente, concepto..." class="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+        <select id="filter-income-method" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          <option value="">Todos los métodos</option>
+          <option value="Efectivo">Efectivo</option>
+          <option value="Transferencia">Transferencia</option>
+          <option value="Tarjeta">Tarjeta</option>
+          <option value="Cheque">Cheque</option>
+        </select>
+        <input type="month" id="filter-income-month" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+      </div>
+      <div id="incomes-list" class="overflow-x-auto"></div>
+    </section>
+
+    <!-- EGRESOS -->
+    <section id="section-expenses" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-arrow-up-from-bracket text-red-600"></i> Registro de Egresos</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Gastos y Costos</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Registra todos los gastos operativos, mantenimiento, insumos, reparaciones</p>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button id="btn-manage-categories" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-100 transition w-full sm:w-auto">
+            <i class="fa-solid fa-tags text-amber-600"></i> <span>Categorías</span>
+          </button>
+          <button id="btn-manage-recurring" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-100 transition w-full sm:w-auto">
+            <i class="fa-solid fa-repeat text-sky-600"></i> <span>Recurrentes</span>
+            <span id="recurring-due-badge" class="hidden px-2 py-0.5 rounded-full text-[0.65rem] bg-red-100 text-red-700 font-extrabold">0</span>
+          </button>
+          <button id="btn-add-expense" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+            <i class="fa-solid fa-plus"></i> <span>Registrar Gasto</span>
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 mb-4">
+        <input type="text" id="search-expenses" placeholder="Buscar descripción, proveedor..." class="flex-1 min-w-[200px] bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+        <select id="filter-expense-category" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          <option value="">Todas las categorías</option>
+        </select>
+        <select id="filter-expense-space" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          <option value="">Todos los espacios</option>
+        </select>
+        <input type="month" id="filter-expense-month" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+      </div>
+      <div id="expenses-list" class="overflow-x-auto"></div>
+    </section>
+
+    <!-- RENTABILIDAD POR ESPACIO -->
+    <section id="section-profitability" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-chart-bar text-blue-600"></i> Rentabilidad por Espacio</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Análisis de Rendimiento</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Compara ingresos, gastos y resultado neto por cada espacio</p>
+        </div>
+        <select id="profitability-period" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800 w-full sm:w-auto">
+          <option value="month">Este Mes</option>
+          <option value="quarter">Este Trimestre</option>
+          <option value="year">Este Año</option>
+          <option value="all">Todo el Historial</option>
+        </select>
+      </div>
+      <div id="profitability-table" class="overflow-x-auto"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4" id="profitability-cards"></div>
+    </section>
+
+    <!-- USUARIOS -->
+    <section id="section-users" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-users-cog text-indigo-600"></i> Gestión de Usuarios</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Usuarios y Permisos</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Administra accesos al panel: Administradores y Personal Operativo</p>
+        </div>
+        <button id="btn-add-user" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+          <i class="fa-solid fa-plus"></i> <span>Nuevo Usuario</span>
+        </button>
+      </div>
+      <div id="users-list" class="space-y-3"></div>
+    </section>
+
+    <!-- AUDITORÍA -->
+    <section id="section-audit" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-clipboard-list text-gray-600"></i> Log de Auditoría</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Trazabilidad de Operaciones</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Historial de cambios en reservas, pagos, precios, usuarios y configuración</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <select id="filter-audit-action" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+            <option value="">Todas las acciones</option>
+            <option value="create">Creación</option>
+            <option value="update">Modificación</option>
+            <option value="delete">Eliminación</option>
+            <option value="login">Login/Logout</option>
+            <option value="migrate">Migración</option>
+          </select>
+          <select id="filter-audit-entity" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+            <option value="">Todas las entidades</option>
+            <option value="reservation">Reservas</option>
+            <option value="payment">Pagos</option>
+            <option value="pricing">Precios</option>
+            <option value="space">Espacios</option>
+            <option value="user">Usuarios</option>
+            <option value="expense">Egresos</option>
+            <option value="income">Ingresos</option>
+          </select>
+          <input type="month" id="filter-audit-month" class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+        </div>
+      </div>
+      <div id="audit-list" class="overflow-x-auto"></div>
+    </section>
+
+    <!-- CONFIGURACIÓN -->
+    <section id="section-settings" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-8">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-gear text-gray-500"></i> Configuración General</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Parámetros del Sistema</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Configuración global: empresa, moneda, alertas, respaldos</p>
+        </div>
+      </div>
+
+      <form id="settings-form" class="space-y-8" onsubmit="return false;">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-building text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Información de la Empresa</h4>
+            </div>
+            <div class="space-y-4 text-sm">
+              <div>
+                <label for="setting-company-name" class="block text-xs font-bold text-gray-700 mb-1">Nombre</label>
+                <input type="text" id="setting-company-name" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div>
+                <label for="setting-company-address" class="block text-xs font-bold text-gray-700 mb-1">Dirección</label>
+                <input type="text" id="setting-company-address" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div>
+                <label for="setting-company-phone" class="block text-xs font-bold text-gray-700 mb-1">Teléfono</label>
+                <input type="text" id="setting-company-phone" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div>
+                <label for="setting-company-email" class="block text-xs font-bold text-gray-700 mb-1">Email</label>
+                <input type="email" id="setting-company-email" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div>
+                <label for="setting-whatsapp" class="block text-xs font-bold text-gray-700 mb-1">WhatsApp (solo números)</label>
+                <input type="text" id="setting-whatsapp" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-coins text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Moneda y Localización</h4>
+            </div>
+            <div class="space-y-4 text-sm">
+              <div>
+                <label for="setting-currency" class="block text-xs font-bold text-gray-700 mb-1">Código ISO</label>
+                <input type="text" id="setting-currency" maxlength="3" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800 uppercase">
+              </div>
+              <div>
+                <label for="setting-currency-symbol" class="block text-xs font-bold text-gray-700 mb-1">Símbolo</label>
+                <input type="text" id="setting-currency-symbol" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div>
+                <label for="setting-timezone" class="block text-xs font-bold text-gray-700 mb-1">Zona Horaria</label>
+                <select id="setting-timezone" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                  <option value="America/Asuncion">America/Asuncion (Py)</option>
+                  <option value="America/Argentina/Buenos_Aires">America/Argentina/Buenos_Aires</option>
+                  <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+                  <option value="UTC">UTC</option>
+                </select>
+              </div>
+              <div>
+                <label for="setting-date-format" class="block text-xs font-bold text-gray-700 mb-1">Formato de Fecha</label>
+                <input type="text" id="setting-date-format" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800" placeholder="DD/MM/YYYY">
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-bell text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Alertas y Notificaciones</h4>
+            </div>
+            <div class="space-y-4 text-sm">
+              <div>
+                <label for="setting-alert-days" class="block text-xs font-bold text-gray-700 mb-1">Días de antelación para alertas</label>
+                <input type="number" id="setting-alert-days" min="1" max="30" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div class="flex items-center gap-3">
+                <input type="checkbox" id="setting-auto-confirm" class="rounded text-forest-800 focus:ring-forest-800 w-4 h-4">
+                <label for="setting-auto-confirm" class="text-sm text-gray-700">Confirmación automática de reservas web tras pago</label>
+              </div>
+              <div class="flex items-center gap-3">
+                <input type="checkbox" id="setting-maintenance" class="rounded text-forest-800 focus:ring-forest-800 w-4 h-4">
+                <label for="setting-maintenance" class="text-sm text-gray-700">Modo mantenimiento (oculta formulario web)</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-database text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Respaldos y Datos</h4>
+            </div>
+            <div class="space-y-4 text-sm">
+              <div class="flex items-center gap-3">
+                <input type="checkbox" id="setting-backup" class="rounded text-forest-800 focus:ring-forest-800 w-4 h-4" checked>
+                <label for="setting-backup" class="text-sm text-gray-700">Respaldos automáticos diarios en localStorage</label>
+              </div>
+              <button type="button" id="btn-export-all" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 w-full sm:w-auto">
+                <i class="fa-solid fa-download"></i> Exportar Todos los Datos (JSON)
+              </button>
+              <button type="button" id="btn-import-all" class="px-4 py-2 rounded-xl text-xs font-bold border border-gray-300 text-gray-700 hover:bg-gray-100 flex items-center gap-2 w-full sm:w-auto">
+                <i class="fa-solid fa-upload"></i> Importar Datos
+              </button>
+              <input type="file" id="import-file" accept=".json" class="hidden" onchange="handleImport(event)">
+              <button type="button" id="btn-clear-all" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 w-full sm:w-auto">
+                <i class="fa-solid fa-trash"></i> Limpiar Todo (¡Irreversible!)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-4 pt-4 border-t border-gray-200">
+          <button type="button" id="btn-save-settings" class="btn-gold px-8 py-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg">
+            <i class="fa-solid fa-floppy-disk"></i> <span>Guardar Configuración</span>
+          </button>
+        </div>
+      </form>
     </section>
 
   </main>
@@ -666,6 +1108,24 @@
         </div>
       </form>
 
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 3: WIZARD NUEVA RESERVA (7 PASOS)
+       ======================================================================== -->
+  <div id="wizard-modal" class="fixed inset-0 z-50 bg-black/60 hidden items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-gray-100 relative max-h-[92vh] flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between p-5 sm:p-6 pb-3 border-b border-gray-100">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-gold-600 block">Flujo guiado</span>
+          <h3 id="wizard-title" class="font-serif text-xl font-bold text-forest-900">Nueva reserva</h3>
+        </div>
+        <button onclick="closeWizard()" class="p-2 text-gray-400 hover:text-gray-700 rounded-lg"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+      <div id="wizard-steps" class="flex items-center gap-1.5 px-5 sm:px-6 py-3 border-b border-gray-100 overflow-x-auto"></div>
+      <div id="wizard-body" class="p-5 sm:p-6 overflow-y-auto flex-1"></div>
+      <div id="wizard-foot" class="flex items-center gap-2 p-4 sm:p-5 border-t border-gray-100 bg-gray-50/60"></div>
     </div>
   </div>
 
