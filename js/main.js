@@ -498,19 +498,32 @@ function initFaqAccordion() {
     const header = item.querySelector('.faq-header');
     if (!header) return;
 
-    header.addEventListener('click', () => {
+    const toggle = () => {
       const isOpen = item.classList.contains('open');
 
       // Cerrar otros
       faqItems.forEach(other => {
-        if (other !== item) other.classList.remove('open');
+        if (other !== item) {
+          other.classList.remove('open');
+          other.querySelector('.faq-header')?.setAttribute('aria-expanded', 'false');
+        }
       });
 
       // Alternar actual
       if (isOpen) {
         item.classList.remove('open');
+        header.setAttribute('aria-expanded', 'false');
       } else {
         item.classList.add('open');
+        header.setAttribute('aria-expanded', 'true');
+      }
+    };
+
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
       }
     });
   });

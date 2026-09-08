@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+
+# TODO-SEO: reemplazar el dominio marcador por el dominio real al publicar
+Sitemap: https://www.quintajavyaha.com.py/sitemap.xml
