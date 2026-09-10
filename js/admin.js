@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   SPACES: 'quinta_spaces',
   TURNS: 'quinta_turns',
   PRICING_RULES: 'quinta_pricing_rules',
+  HOLIDAYS: 'quinta_holidays',
   RESERVATIONS: 'quinta_reservations_v2',
   RESERVATION_SPACES: 'quinta_reservation_spaces',
   SERVICES: 'quinta_services',
@@ -21,6 +22,8 @@ const STORAGE_KEYS = {
   EXPENSES: 'quinta_expenses',
   EXPENSE_CATEGORIES: 'quinta_expense_categories',
   RECURRING_EXPENSES: 'quinta_recurring_expenses',
+  SURVEYS: 'quinta_surveys',
+  DEPOSITS: 'quinta_deposits', // pagos de seña del cliente (con comprobante)
   // System
   USERS: 'quinta_users',
   AUDIT_LOGS: 'quinta_audit_logs',
@@ -40,9 +43,12 @@ let currentUser = null;
 let spaces = [];
 let turns = [];
 let pricingRules = [];
+let holidays = [];
 let reservations = [];
 let reservationSpaces = [];
 let services = [];
+let surveys = [];
+let deposits = []; // pagos de seña (un registro por reserva + attempts[])
 let payments = [];
 let incomes = [];
 let expenses = [];
@@ -150,8 +156,8 @@ function migrateLegacyData() {
         'Pasadía Familiar': ['piscina'],
         'Cumpleaños Infantil': ['salon', 'piscina'],
         'Cumpleaños / Festejo': ['salon', 'piscina'],
-        'Boda Campestre': ['salon', 'piscina', 'quincho'],
-        'Boda / 15 Años': ['salon', 'piscina', 'quincho'],
+        'Boda Campestre': ['salon', 'piscina'],
+        'Boda / 15 Años': ['salon', 'piscina'],
         'Evento Corporativo': ['salon'],
         'Encuentro Corporativo / Retiro': ['salon']
       };
@@ -215,9 +221,9 @@ function migrateLegacyData() {
 
     // Crear reglas básicas por tipo de evento
     const eventRules = [
-      { key: 'pasadia', name: 'Pasadía', spaces: ['piscina', 'quincho'], turn: 'dia_completo' },
+      { key: 'pasadia', name: 'Pasadía', spaces: ['piscina'], turn: 'dia_completo' },
       { key: 'cumple', name: 'Cumpleaños/Festejo', spaces: ['salon', 'piscina'], turn: 'tarde_noche' },
-      { key: 'boda', name: 'Boda/15 Años', spaces: ['salon', 'piscina', 'quincho'], turn: 'dia_completo' },
+      { key: 'boda', name: 'Boda/15 Años', spaces: ['salon', 'piscina'], turn: 'dia_completo' },
       { key: 'corporativo', name: 'Corporativo', spaces: ['salon'], turn: 'dia_completo' }
     ];
 
@@ -286,9 +292,12 @@ function initStorage() {
   spaces = loadJSON(STORAGE_KEYS.SPACES, getDefaultSpaces());
   turns = loadJSON(STORAGE_KEYS.TURNS, getDefaultTurns());
   pricingRules = loadJSON(STORAGE_KEYS.PRICING_RULES, []);
+  holidays = loadJSON(STORAGE_KEYS.HOLIDAYS, []);
   reservations = loadJSON(STORAGE_KEYS.RESERVATIONS, []);
   reservationSpaces = loadJSON(STORAGE_KEYS.RESERVATION_SPACES, []);
   services = loadJSON(STORAGE_KEYS.SERVICES, getDefaultServices());
+  surveys = loadJSON(STORAGE_KEYS.SURVEYS, []);
+  deposits = normalizeDeposits(loadJSON(STORAGE_KEYS.DEPOSITS, []));
   payments = loadJSON(STORAGE_KEYS.PAYMENTS, []);
   incomes = loadJSON(STORAGE_KEYS.INCOMES, []);
   expenses = loadJSON(STORAGE_KEYS.EXPENSES, []);
@@ -330,8 +339,103 @@ function initStorage() {
     settings = getDefaultSettings();
     saveJSON(STORAGE_KEYS.SETTINGS, settings);
   }
+  if (!settings.deposit) { // compat: config de seña en instalaciones existentes
+    settings.deposit = getDefaultSettings().deposit;
+    saveJSON(STORAGE_KEYS.SETTINGS, settings);
+  }
+  settings.deposit = normalizeDepositSettings(settings.deposit);
+  if (!settings.terms) settings.terms = getDefaultSettings().terms;
+  settings.terms = normalizeTermsSettings(settings.terms);
+  if (!settings.terms.body) { // primera vez: sembrar reglamento vigente
+    settings.terms.body = getDefaultTermsBody();
+    settings.terms.updatedAt = getTodayStr();
+    saveJSON(STORAGE_KEYS.SETTINGS, settings);
+  }
+  normalizeDeposits(deposits); // re-normaliza en memoria por si hubo edición manual
 
+  purgeInvalidZones();
   autoBackup();
+}
+/* Zonas válidas: únicamente Piscina y Salón Climatizado.
+   Elimina cualquier otra zona (prueba/ficticia) y sus referencias. */
+const VALID_SPACE_IDS = ['salon', 'piscina'];
+function purgeInvalidZones() {
+  let changed = false;
+  const removedSpaceIds = spaces.map(s => s.id).filter(id => !VALID_SPACE_IDS.includes(id));
+  if (removedSpaceIds.length) {
+    spaces = spaces.filter(s => VALID_SPACE_IDS.includes(s.id));
+    // Normalizar nombres reales
+    const salon = spaces.find(s => s.id === 'salon');
+    if (salon) salon.name = 'Salón Climatizado';
+    const pisc = spaces.find(s => s.id === 'piscina');
+    if (pisc) pisc.name = 'Piscina';
+    saveJSON(STORAGE_KEYS.SPACES, spaces);
+    changed = true;
+    logAudit('delete', 'space', removedSpaceIds.join(','), { reason: 'zona no válida: solo Piscina y Salón Climatizado' }, 'warning');
+  }
+  // Turnos: quitar espacios inválidos
+  turns.forEach(t => {
+    if (t.spaces && t.spaces.some(s => !VALID_SPACE_IDS.includes(s))) {
+      t.spaces = t.spaces.filter(s => VALID_SPACE_IDS.includes(s));
+      changed = true;
+    }
+  });
+  if (changed) saveJSON(STORAGE_KEYS.TURNS, turns);
+  // Reservas: quitar entradas de zonas inválidas; eliminar reservas huérfanas (datos de prueba)
+  if (removedSpaceIds.length) {
+    const before = reservationSpaces.length;
+    reservationSpaces = reservationSpaces.filter(rs => VALID_SPACE_IDS.includes(rs.spaceId));
+    if (reservationSpaces.length !== before) changed = true;
+    const withSpace = new Set(reservationSpaces.map(rs => rs.reservationId));
+    const orphaned = reservations.filter(r => !withSpace.has(r.id) && !r.date);
+    if (orphaned.length) {
+      const ids = new Set(orphaned.map(r => r.id));
+      reservations = reservations.filter(r => !ids.has(r.id));
+      payments = payments.filter(p => !ids.has(p.reservationId));
+      incomes = incomes.filter(i => !(i.reservationId && ids.has(i.reservationId)));
+      saveJSON(STORAGE_KEYS.RESERVATIONS, reservations);
+      saveJSON(STORAGE_KEYS.PAYMENTS, payments);
+      saveJSON(STORAGE_KEYS.INCOMES, incomes);
+      changed = true;
+      logAudit('delete', 'reservation', [...ids].join(','), { reason: 'huérfanas tras purga de zonas' }, 'warning');
+    }
+    saveJSON(STORAGE_KEYS.RESERVATION_SPACES, reservationSpaces);
+  }
+  // Reglas de precio: filtrar espacios; eliminar reglas que solo apuntaban a zonas inválidas
+  const beforeRules = pricingRules.length;
+  pricingRules = pricingRules.filter(r => {
+    const c = r.conditions || {};
+    if (c.spaces && c.spaces.length) {
+      c.spaces = c.spaces.filter(s => VALID_SPACE_IDS.includes(s));
+      if (!c.spaces.length) {
+        logAudit('delete', 'pricing_rule', r.id, { reason: 'solo referenciaba zonas eliminadas' }, 'warning');
+        return false;
+      }
+    }
+    return true;
+  });
+  if (pricingRules.length !== beforeRules) {
+    saveJSON(STORAGE_KEYS.PRICING_RULES, pricingRules);
+    changed = true;
+  }
+  // Egresos y recurrentes: filtrar espacios afectados
+  let expChanged = false;
+  expenses.forEach(e => {
+    if (e.spaceIds && e.spaceIds.some(s => !VALID_SPACE_IDS.includes(s))) {
+      e.spaceIds = e.spaceIds.filter(s => VALID_SPACE_IDS.includes(s));
+      expChanged = true;
+    }
+  });
+  if (expChanged) saveJSON(STORAGE_KEYS.EXPENSES, expenses);
+  let recChanged = false;
+  recurringExpenses.forEach(r => {
+    if (r.spaceIds && r.spaceIds.some(s => !VALID_SPACE_IDS.includes(s))) {
+      r.spaceIds = r.spaceIds.filter(s => VALID_SPACE_IDS.includes(s));
+      recChanged = true;
+    }
+  });
+  if (recChanged) saveJSON(STORAGE_KEYS.RECURRING_EXPENSES, recurringExpenses);
+  if (changed) saveAll();
 }
 /* Respaldo automático diario: snapshot con fecha, conserva últimos 7 */
 function autoBackup() {
@@ -360,9 +464,12 @@ function saveAll() {
   saveJSON(STORAGE_KEYS.SPACES, spaces);
   saveJSON(STORAGE_KEYS.TURNS, turns);
   saveJSON(STORAGE_KEYS.PRICING_RULES, pricingRules);
+  saveJSON(STORAGE_KEYS.HOLIDAYS, holidays);
   saveJSON(STORAGE_KEYS.RESERVATIONS, reservations);
   saveJSON(STORAGE_KEYS.RESERVATION_SPACES, reservationSpaces);
   saveJSON(STORAGE_KEYS.SERVICES, services);
+  saveJSON(STORAGE_KEYS.SURVEYS, surveys);
+  saveJSON(STORAGE_KEYS.DEPOSITS, deposits);
   saveJSON(STORAGE_KEYS.PAYMENTS, payments);
   saveJSON(STORAGE_KEYS.INCOMES, incomes);
   saveJSON(STORAGE_KEYS.EXPENSES, expenses);
@@ -377,10 +484,11 @@ function saveAll() {
 // DATOS POR DEFECTO (SEED)
 // ============================================================================
 function getDefaultSpaces() {
+  // Zonas reales alquilables: únicamente Piscina y Salón Climatizado
   return [
     {
       id: 'salon',
-      name: 'Salón de Eventos',
+      name: 'Salón Climatizado',
       description: 'Salón climatizado cerrado con blindex, vista al jardín, capacidad 300+ personas',
       shortName: 'Salón',
       icon: 'fa-solid fa-building-columns',
@@ -396,7 +504,7 @@ function getDefaultSpaces() {
     },
     {
       id: 'piscina',
-      name: 'Zona de Piscina',
+      name: 'Piscina',
       description: 'Piscina cristalina con solárium, reposeras, área de sombra y vestuarios',
       shortName: 'Piscina',
       icon: 'fa-solid fa-water-ladder',
@@ -407,38 +515,6 @@ function getDefaultSpaces() {
       active: true,
       sortOrder: 2,
       amenities: ['Solárium', 'Reposeras', 'Sombrillas', 'Vestuarios', 'Duchas'],
-      createdAt: nowISO(),
-      updatedAt: nowISO()
-    },
-    {
-      id: 'quincho',
-      name: 'Quincho y Parrilla',
-      description: 'Parrilla profesional con mesadas, bacha, área de preparación y comedor exterior',
-      shortName: 'Quincho',
-      icon: 'fa-solid fa-fire-burner',
-      color: '#dc2626', // red-600
-      capacity: 50,
-      basePrice: 0,
-      requiresStaff: false,
-      active: true,
-      sortOrder: 3,
-      amenities: ['Parrilla grande', 'Mesadas', 'Bacha', 'Heladera', 'Freezer'],
-      createdAt: nowISO(),
-      updatedAt: nowISO()
-    },
-    {
-      id: 'estacionamiento',
-      name: 'Estacionamiento Interno',
-      description: 'Estacionamiento privado dentro del predio con portón de acceso',
-      shortName: 'Estac.',
-      icon: 'fa-solid fa-parking',
-      color: '#6b7280', // gray-500
-      capacity: 40,
-      basePrice: 0,
-      requiresStaff: false,
-      active: true,
-      sortOrder: 4,
-      amenities: ['Portón automático', 'Iluminación', 'Seguridad'],
       createdAt: nowISO(),
       updatedAt: nowISO()
     }
@@ -455,7 +531,7 @@ function getDefaultTurns() {
       endTime: '13:00',
       durationHours: 4,
       color: '#f59e0b', // amber-500
-      spaces: ['salon', 'piscina', 'quincho'],
+      spaces: ['salon', 'piscina'],
       active: true,
       sortOrder: 1,
       allowCustom: false
@@ -468,7 +544,7 @@ function getDefaultTurns() {
       endTime: '18:00',
       durationHours: 4,
       color: '#f97316', // orange-500
-      spaces: ['salon', 'piscina', 'quincho'],
+      spaces: ['salon', 'piscina'],
       active: true,
       sortOrder: 2,
       allowCustom: false
@@ -481,7 +557,7 @@ function getDefaultTurns() {
       endTime: '01:00',
       durationHours: 6,
       color: '#7c3aed', // violet-600
-      spaces: ['salon', 'quincho'],
+      spaces: ['salon'],
       active: true,
       sortOrder: 3,
       allowCustom: false
@@ -494,7 +570,7 @@ function getDefaultTurns() {
       endTime: '01:00',
       durationHours: 16,
       color: '#1b4332', // forest-900
-      spaces: ['salon', 'piscina', 'quincho'],
+      spaces: ['salon', 'piscina'],
       active: true,
       sortOrder: 4,
       allowCustom: false
@@ -507,7 +583,7 @@ function getDefaultTurns() {
       endTime: '23:59',
       durationHours: 0, // Variable
       color: '#6366f1', // indigo-500
-      spaces: ['salon', 'piscina', 'quincho'],
+      spaces: ['salon', 'piscina'],
       active: true,
       sortOrder: 5,
       allowCustom: true
@@ -779,6 +855,152 @@ function getDefaultUsers() {
   ];
 }
 
+function getDefaultTermsBody() {
+  return `# REGLAMENTO CONTRACTUAL Y CONDICIONES GENERALES DE USO
+## 1. OBJETO Y ÁMBITO DE APLICACIÓN
+El presente instrumento establece las condiciones generales, obligaciones, prohibiciones, responsabilidades, penalidades y mecanismos de resarcimiento aplicables a la utilización temporal de la propiedad, sus dependencias, instalaciones, equipamientos y bienes accesorios.
+La formalización de una reserva mediante la plataforma digital implica la **aceptación expresa e íntegra** del presente instrumento por parte del titular de la reserva.
+Las disposiciones aquí establecidas serán aplicables al titular y, en cuanto corresponda, a todas las personas cuyo ingreso derive directa o indirectamente de la reserva efectuada por aquel.
+---
+## 2. DEFINICIONES CONTRACTUALES
+A efectos del presente reglamento, se entenderá por:
+**Titular de la reserva:** persona física que formaliza la contratación y cuyos datos quedan asociados a la reserva.
+**Usuario:** cualquier persona que haga uso efectivo de las instalaciones durante el período contratado.
+**Invitado:** persona cuyo acceso derive de una reserva realizada por el titular.
+**Período de uso:** intervalo temporal comprendido entre la hora de ingreso y la hora de finalización consignadas en la reserva.
+**Instalaciones:** conjunto de espacios físicos, infraestructura, piscina, salón, sanitarios, áreas exteriores y demás dependencias.
+**Equipamiento:** bienes muebles, electrodomésticos, dispositivos, mobiliario, sistemas de climatización, equipamiento de piscina y demás elementos destinados al funcionamiento o utilización de la propiedad.
+**Daño:** menoscabo, deterioro, destrucción, pérdida, inutilización o disminución funcional de un bien perteneciente a la propiedad.
+---
+## 3. PERFECCIONAMIENTO DE LA RESERVA
+La reserva se considerará perfeccionada cuando el sistema registre la aceptación de las presentes condiciones y se hayan cumplido los requisitos de contratación establecidos.
+La reserva quedará vinculada exclusivamente a:
+* Fecha contratada.
+* Horario contratado.
+* Espacio o espacios seleccionados.
+* Cantidad de usuarios declarados.
+* Condiciones económicas aplicables.
+Cualquier modificación deberá contar con autorización previa de la administración.
+---
+## 4. OBLIGACIÓN DE CUSTODIA Y RESPONSABILIDAD
+El titular de la reserva asumirá, durante el período de uso, una obligación de diligencia respecto de las instalaciones y bienes puestos a su disposición.
+Asimismo, será responsable contractualmente por los actos, omisiones, daños o incumplimientos atribuibles a las personas que ingresen bajo su reserva, sin perjuicio de las acciones que pudieran corresponder conforme al ordenamiento jurídico aplicable.
+El desconocimiento de las presentes condiciones por parte de un invitado no eximirá al titular de las obligaciones derivadas de la reserva.
+---
+## 5. CAPACIDAD MÁXIMA Y USUARIOS ADICIONALES
+La capacidad de utilización estará determinada por la cantidad de personas declarada y autorizada en la reserva.
+La incorporación de usuarios no declarados constituirá un **incumplimiento de las condiciones contractuales de utilización**.
+Por cada persona adicional no autorizada podrá establecerse una penalidad de:
+**Gs. [MONTO] por persona.**
+La administración podrá impedir el acceso de personas que impliquen la superación de la capacidad máxima autorizada.
+---
+## 6. CUMPLIMIENTO DEL HORARIO
+El titular deberá respetar estrictamente el período de utilización contratado.
+La permanencia posterior a la hora de finalización, sin autorización expresa, constituirá **extralimitación temporal del uso contratado**.
+Podrá aplicarse una penalidad de:
+**Gs. [MONTO] por cada [30/60] minutos o fracción de demora.**
+Cuando la prolongación no autorizada produzca perjuicios adicionales, particularmente respecto de una reserva posterior, podrán reclamarse los costos directamente derivados del incumplimiento, conforme corresponda.
+---
+## 7. RÉGIMEN DE UTILIZACIÓN DE LAS INSTALACIONES
+El usuario deberá emplear las instalaciones conforme a su naturaleza, finalidad y condiciones ordinarias de utilización.
+Queda prohibida cualquier intervención, modificación, desmontaje, manipulación técnica o alteración de instalaciones y equipamientos sin autorización expresa.
+Se considerará utilización indebida aquella conducta que exceda el uso razonablemente previsto para el bien o instalación y que produzca deterioro, funcionamiento anómalo o inutilización.
+---
+## 8. RÉGIMEN ESPECIAL DE LA PISCINA
+El uso de la piscina estará sujeto a las condiciones de seguridad establecidas por la administración.
+Queda prohibido:
+* Introducir elementos susceptibles de provocar contaminación o deterioro.
+* Introducir recipientes de vidrio.
+* Manipular sistemas hidráulicos, eléctricos o de filtración.
+* Realizar conductas que impliquen riesgo físico innecesario.
+* Ejecutar actos que puedan producir daños a la infraestructura.
+* Arrojar residuos, alimentos u objetos al interior de la piscina.
+La utilización por personas menores de edad requerirá supervisión adecuada por parte de un adulto responsable.
+---
+## 9. SALÓN CLIMATIZADO Y EQUIPAMIENTO
+Los sistemas de climatización, instalaciones eléctricas y demás equipamientos deberán utilizarse exclusivamente conforme a su finalidad.
+La manipulación técnica no autorizada que provoque avería, deterioro o indisponibilidad del equipamiento generará responsabilidad por los costos razonablemente necesarios para su restitución funcional.
+---
+## 10. RÉGIMEN DE DAÑOS Y RESARCIMIENTO
+Todo deterioro imputable al titular o a sus invitados podrá generar una obligación de **reparación o resarcimiento patrimonial**.
+La cuantificación económica se efectuará conforme a la naturaleza del perjuicio:
+### a) Bien reparable
+Se considerará el costo razonable de restitución de sus condiciones funcionales.
+### b) Bien irreparable
+Se considerará el costo razonable de reposición por un bien equivalente o de características funcionales similares.
+### c) Bien perdido
+Se considerará el valor razonable de reposición.
+### d) Daño a infraestructura
+Se considerarán los costos de materiales, mano de obra, servicios técnicos y demás conceptos directamente vinculados con la restitución.
+La existencia del daño podrá documentarse mediante fotografías, registros administrativos, informes técnicos, presupuestos, comprobantes u otros medios admisibles.
+---
+## 11. CLÁUSULA PENAL
+Las partes podrán establecer penalidades económicas determinadas para supuestos específicos de incumplimiento.
+La **cláusula penal** tendrá por finalidad establecer anticipadamente una consecuencia económica frente a los supuestos expresamente contemplados en las presentes condiciones.
+Las penalidades aplicables serán informadas al usuario antes de la confirmación de la reserva.
+La aplicación de una penalidad no implicará necesariamente la sustitución del costo de reparación de un daño material cuando ambos conceptos correspondan a obligaciones diferenciadas y jurídicamente exigibles.
+---
+## 12. LIMPIEZA EXTRAORDINARIA
+El usuario deberá restituir los espacios utilizados en condiciones razonables de higiene y orden.
+Cuando el estado de la propiedad exceda considerablemente las condiciones ordinarias derivadas del uso normal, podrá calificarse como **necesidad de limpieza extraordinaria**.
+En dicho supuesto podrá aplicarse:
+**Penalidad por limpieza extraordinaria: Gs. [MONTO].**
+Cuando corresponda, podrán documentarse las condiciones encontradas mediante registros internos.
+---
+## 13. CONDUCTAS QUE CONSTITUYEN INCUMPLIMIENTO GRAVE
+Se considerarán incumplimientos graves, entre otros:
+* Superación deliberada de la capacidad máxima.
+* Daño intencional a bienes o infraestructura.
+* Manipulación no autorizada de instalaciones técnicas.
+* Conductas que generen riesgo grave para terceros.
+* Utilización de la propiedad para finalidades no autorizadas.
+* Incumplimiento reiterado de instrucciones de seguridad.
+* Realización de actividades ilícitas dentro de la propiedad.
+Ante un incumplimiento grave, la administración podrá disponer la **terminación anticipada del período de uso**, sin perjuicio de las obligaciones económicas derivadas de daños, pérdidas o penalidades aplicables.
+---
+## 14. BEBIDAS ALCOHÓLICAS Y SUSTANCIAS ILÍCITAS
+El consumo de bebidas alcohólicas será realizado bajo responsabilidad de los usuarios.
+Queda prohibido el ingreso, posesión, distribución o consumo de sustancias cuya tenencia o utilización se encuentre prohibida por la legislación aplicable.
+La administración podrá adoptar las medidas necesarias ante situaciones que comprometan la seguridad de las personas o de la propiedad.
+---
+## 15. MECANISMO DE DETERMINACIÓN DE PENALIDADES
+Ante la constatación de un incumplimiento, la administración podrá generar un registro que contenga:
+1. Identificación de la reserva.
+2. Fecha y horario.
+3. Descripción del incumplimiento.
+4. Identificación del bien o condición afectada.
+5. Evidencia disponible.
+6. Penalidad aplicable.
+7. Costo de reparación o reposición, cuando corresponda.
+8. Importe total determinado.
+El titular será notificado del importe y del concepto que lo origina.
+---
+## 16. RESPONSABILIDAD POR INVITADOS
+La incorporación de terceros al grupo de usuarios será considerada efectuada bajo responsabilidad del titular de la reserva.
+En consecuencia, los daños o incumplimientos producidos por dichos terceros podrán ser imputados contractualmente al titular en los términos establecidos en el presente instrumento y en la legislación aplicable.
+---
+## 17. ENTREGA Y RESTITUCIÓN
+Finalizado el período contratado, el titular deberá restituir las instalaciones y bienes en condiciones sustancialmente equivalentes a aquellas existentes al momento de su entrega, exceptuando el desgaste razonable derivado del uso permitido.
+La administración podrá realizar una inspección posterior a la finalización de la reserva.
+---
+## 18. CASOS DE FUERZA MAYOR
+No se imputará responsabilidad por incumplimientos directamente derivados de acontecimientos imprevisibles o inevitables que configuren un supuesto de fuerza mayor o caso fortuito, conforme a la legislación aplicable.
+La determinación de tales circunstancias se realizará atendiendo a las características concretas del hecho y sus efectos.
+---
+## 19. ACEPTACIÓN ELECTRÓNICA
+Previo a la confirmación de la reserva, el sistema requerirá la aceptación expresa mediante una casilla de verificación.
+La aceptación electrónica quedará asociada a la correspondiente reserva y constituirá manifestación expresa de conformidad con las condiciones presentadas durante el proceso de contratación.
+La no aceptación impedirá la finalización de la reserva.
+---
+## 20. PREVALENCIA DE LA LEGISLACIÓN APLICABLE
+Las presentes condiciones serán interpretadas y aplicadas de conformidad con la legislación vigente de la República del Paraguay.
+En caso de incompatibilidad entre alguna disposición del presente reglamento y una norma de carácter imperativo, prevalecerá esta última, manteniéndose vigentes las demás disposiciones en cuanto resulten jurídicamente aplicables.
+---
+**DECLARACIÓN FINAL**
+La confirmación electrónica de una reserva constituye aceptación expresa de las presentes condiciones y del régimen de obligaciones, restricciones, penalidades y responsabilidades establecido para el uso de la propiedad.
+**Quinta Javy'aha Ña Juana-Irene**
+**Reglamento vigente — v1.0**`;
+}
 function getDefaultSettings() {
   return {
     currency: 'PYG',
@@ -792,6 +1014,23 @@ function getDefaultSettings() {
     companyEmail: 'contacto@quintajavyaha.com',
     whatsappNumber: '595972783547',
     defaultPaymentMethods: ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque'],
+    terms: {
+      active: true,
+      version: 'v1.0',
+      updatedAt: '',
+      title: 'Reglamento Contractual y Condiciones Generales de Uso',
+      checkboxLabel: 'Declaro haber leído y acepto el Reglamento Contractual y Condiciones Generales de Uso, incluyendo las obligaciones, restricciones, penalidades y régimen de responsabilidad aplicables a la reserva.',
+      body: ''
+    },
+    deposit: {
+      active: true,
+      mode: 'percent', // 'percent' | 'fixed'
+      percent: 50,
+      fixed: 0,
+      bank: '', holder: '', account: '', alias: '',
+      methods: ['Transferencia', 'Efectivo'],
+      instructions: 'Realizá la transferencia y adjuntá el comprobante. Tu fecha se bloquea cuando verifiquemos la seña.'
+    },
     alertDaysBefore: 3,
     autoConfirmEnabled: false,
     maintenanceMode: false,
@@ -928,6 +1167,7 @@ function updateTabsVisibility() {
     'incomes': 'incomes.crud',
     'expenses': 'expenses.crud',
     'profitability': 'profitability.view',
+    'surveys': 'surveys.read',
     'users': 'users.crud',
     'audit': 'audit.read',
     'settings': 'settings.crud'
@@ -983,10 +1223,12 @@ function bootApp() {
   if (typeof initUsersManagement === 'function') initUsersManagement();
   if (typeof initSettingsManagement === 'function') initSettingsManagement();
   if (typeof initWizard === 'function') initWizard();
+  if (typeof initAdvCalendar === 'function') initAdvCalendar();
   const legacyPricing = document.getElementById('section-pricing');
   if (legacyPricing) legacyPricing.classList.add('hidden');
   renderDashboard();
   if (typeof checkAlerts === 'function') checkAlerts();
+  if (typeof initLiveSync === 'function') initLiveSync();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1023,6 +1265,7 @@ function initAuthBoot() {
 function renderDashboard() {
   renderKPIs();
   renderCalendar();
+  renderDetailLayer();
   renderReservationsTable();
   if (typeof renderSpaces === 'function') renderSpaces();
   if (typeof renderTurns === 'function') renderTurns();
@@ -1032,11 +1275,13 @@ function renderDashboard() {
   if (typeof renderIncomes === 'function') renderIncomes();
   if (typeof renderExpenses === 'function') renderExpenses();
   if (typeof renderProfitability === 'function') renderProfitability();
+  if (typeof renderSurveys === 'function') renderSurveys();
   if (typeof renderUsers === 'function') renderUsers();
   if (typeof renderAudit === 'function') renderAudit();
   if (typeof renderSettings === 'function') renderSettings();
   if (typeof renderAlerts === 'function') renderAlerts();
   if (typeof updateRecurringBadge === 'function') updateRecurringBadge();
+  if (typeof updateHolidaysBadge === 'function') updateHolidaysBadge();
 }
 
 function resAmount(r){ return r.totalPrice ?? r.estimatedPrice ?? 0; }
@@ -1101,6 +1346,7 @@ function initCalendarNavigation() {
 
   document.getElementById('cal-today-btn').addEventListener('click', () => {
     currentCalendarDate = new Date();
+    if (detailMode === 'mas' && advMode === 'week') advWinInit();
     renderDashboard();
   });
 
@@ -1109,6 +1355,16 @@ function initCalendarNavigation() {
   });
 }
 function calStep(dir) {
+  if (detailMode === 'mas') {
+    if (advMode === 'day') currentCalendarDate.setDate(currentCalendarDate.getDate() + dir);
+    else if (advMode === 'week') {
+      currentCalendarDate.setDate(currentCalendarDate.getDate() + dir * 7);
+      advWinInit(); // recentrar ventana infinita en la nueva semana (sin tope)
+    }
+    else if (advMode === 'year') currentCalendarDate.setFullYear(currentCalendarDate.getFullYear() + dir);
+    else currentCalendarDate.setMonth(currentCalendarDate.getMonth() + dir);
+    return;
+  }
   if (currentView === 'week') currentCalendarDate.setDate(currentCalendarDate.getDate() + dir * 7);
   else if (currentView === 'day') currentCalendarDate.setDate(currentCalendarDate.getDate() + dir);
   else currentCalendarDate.setMonth(currentCalendarDate.getMonth() + dir);
@@ -1166,12 +1422,27 @@ function renderCalendar() {
     return;
   }
 
+  renderMonthGrid();
+}
+
+/* Mes del calendario mensual — única implementación, reutilizada por
+   "Menos detalles" y por "Más detalles > Mes" (misma fuente de datos). */
+function renderMonthGrid() {
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  const monthGrid = document.getElementById('cal-days-grid');
+  const weekdayHeaders = document.getElementById('cal-weekday-headers');
+  const titleEl = document.getElementById('cal-month-title');
   const year = currentCalendarDate.getFullYear();
   const month = currentCalendarDate.getMonth();
 
+  if (!monthGrid) return;
+  if (weekdayHeaders) weekdayHeaders.classList.remove('hidden');
   if (titleEl) titleEl.textContent = `${monthNames[month]} ${year}`;
 
-  if (monthGrid) monthGrid.classList.remove('hidden');
+  monthGrid.classList.remove('hidden');
   const grid = monthGrid;
   grid.innerHTML = '';
 
@@ -1327,7 +1598,7 @@ function renderDayGrid(dateStr) {
     activeTurns.forEach(t => {
       const applies = !t.spaces?.length || t.spaces.includes(s.id);
       if (!applies) { html += '<td class="p-1 border-t border-gray-100 text-center text-gray-300 text-xs">—</td>'; return; }
-      const occ = reservationSpaces.filter(rs => rs.spaceId === s.id && rs.date === dateStr && (getTurnById(rs.turnId)?.id === t.id || turnsOverlap(getTurnById(rs.turnId), t)) && isActiveReservation(reservations.find(r => r.id === rs.reservationId) || {}));
+      const occ = reservationSpaces.filter(rs => rs.spaceId === s.id && rs.date === dateStr && (getTurnById(rs.turnId)?.id === t.id || turnsOverlap(getTurnById(rs.turnId), t)) && isBlockingReservation(reservations.find(r => r.id === rs.reservationId)));
       if (occ.length) {
         const r = reservations.find(x => x.id === occ[0].reservationId);
         html += `<td class="p-1 border-t border-gray-100"><button onclick="openReservationDetail('${r?.id}')" class="w-full p-2 rounded-xl bg-red-50 border border-red-200 text-left hover:bg-red-100"><span class="block text-xs font-bold text-red-800 truncate">${r?.clientName||'Ocupado'}</span><span class="block text-[0.6rem] text-red-500 font-bold">${STATUS_META[normStatus(r?.status)]?.l||''}</span></button></td>`;
@@ -1482,7 +1753,7 @@ function toggleBlockDate(dateStr, shouldBlock) {
     logAudit('update', 'blocked_date', dateStr, { blocked: false }, 'info');
   }
   saveBlockedDates();
-  renderDashboard();
+  renderDashboard(); notifyDataChanged();
 }
 
 /* ==========================================================================
@@ -1989,6 +2260,13 @@ function initPricingSettings() {
    FASE 3.3 - NÚCLEO: helpers reservas multi-espacio, disponibilidad y precios
    ========================================================================== */
 const ACTIVE_STATUSES = ['solicitud', 'pendiente', 'confirmada', 'confirmado', 'pagado_parcial', 'pagado', 'en_curso'];
+/* REGLA DE NEGOCIO: la fecha solo queda reservada (bloquea disponibilidad)
+   desde 'confirmada' en adelante. 'solicitud' y 'pendiente' NO bloquean:
+   solo se confirma al registrar un pago parcial o total. */
+const BLOCKING_STATUSES = ['confirmada', 'pagado_parcial', 'pagado', 'en_curso'];
+function isBlockingReservation(r) {
+  return r && BLOCKING_STATUSES.includes(normStatus(r.status));
+}
 function normStatus(s) {
   if (!s) return 'pendiente';
   s = String(s).toLowerCase();
@@ -2050,7 +2328,7 @@ function checkAvailability(spaceId, date, turnId, excludeReservationId = null, c
     if (excludeReservationId && rs.reservationId === excludeReservationId) return false;
     const r = reservations.find(x => x.id === rs.reservationId);
     if (!r) return false;
-    if (!isActiveReservation(r)) return false;
+    if (!isBlockingReservation(r)) return false;
     return intervalsOverlap(req, rsInterval(rs));
   });
   return { available: conflicts.length === 0, conflicts };
@@ -2062,6 +2340,16 @@ function checkMultiAvailability(spaceIds, date, turnId, excludeReservationId = n
     if (!r.available) allConflicts.push({ spaceId: sid, conflicts: r.conflicts });
   });
   return { available: allConflicts.length === 0, conflicts: allConflicts };
+}
+/* Feriados cargados por el administrador: recargo fijo por espacio.
+   Si hay varios el mismo día, se aplica el mayor. */
+function getHolidaySurcharge(dateStr) {
+  let best = null;
+  (holidays || []).forEach(h => {
+    if (h.active === false || h.date !== dateStr) return;
+    if (!best || (h.surcharge || 0) > (best.surcharge || 0)) best = h;
+  });
+  return best;
 }
 // Motor de precios por reglas (fixed | hourly | per_person)
 function evaluatePrice(spaceIds, turnId, dateStr, guestsCount = 30, hoursOverride = null, customStart = null, customEnd = null) {
@@ -2116,6 +2404,11 @@ function evaluatePrice(spaceIds, turnId, dateStr, guestsCount = 30, hoursOverrid
         if (s.fixed) price += s.fixed;
         else if (s.percent) price = Math.round(price * (1 + s.percent / 100));
       });
+      const hol = getHolidaySurcharge(dateStr);
+      if (hol && (hol.surcharge || 0) > 0) {
+        price += hol.surcharge;
+        label += ` + feriado (${hol.name || dateStr})`;
+      }
     } else {
       // fallback legacy: recargo finde/viernes del config antiguo
       const legacy = getPricingConfig();
@@ -2123,6 +2416,11 @@ function evaluatePrice(spaceIds, turnId, dateStr, guestsCount = 30, hoursOverrid
       else if (dow === 5 && legacy.dayMultipliers?.viernes) price += legacy.dayMultipliers.viernes;
       else if ([1,2,3,4].includes(dow) && legacy.dayMultipliers?.semanaDiscount) {
         price = Math.round(price * (1 - legacy.dayMultipliers.semanaDiscount / 100));
+      }
+      const holFb = getHolidaySurcharge(dateStr);
+      if (holFb && (holFb.surcharge || 0) > 0) {
+        price += holFb.surcharge;
+        label += ` + feriado (${holFb.name || dateStr})`;
       }
     }
     total += price;
@@ -2132,10 +2430,23 @@ function evaluatePrice(spaceIds, turnId, dateStr, guestsCount = 30, hoursOverrid
 }
 function recalcReservationTotals(resId) {
   const r = reservations.find(x => x.id === resId);
-  if (!r) return;
+  if (!r) return { confirmed: false };
   const paid = payments.filter(p => p.reservationId === resId && p.status !== 'anulado').reduce((a, p) => a + (p.amount || 0), 0);
   r.paidAmount = paid;
   r.balance = Math.max(0, (r.totalPrice || 0) - paid);
+  let confirmed = true;
+  // REGLA: solicitud/pendiente solo se confirma al registrar un pago
+  if (['solicitud', 'pendiente'].includes(normStatus(r.status)) && paid > 0) {
+    const sps = getSpacesOfReservation(resId);
+    const conflict = sps.find(sp => !checkAvailability(sp.spaceId, sp.date, sp.turnId, resId, sp.customStart, sp.customEnd).available);
+    if (conflict) {
+      confirmed = false;
+      logAudit('update', 'reservation', resId, { warning: 'pago registrado pero espacios ocupados; sigue pendiente' }, 'critical');
+    } else {
+      r.status = 'confirmada';
+      logAudit('update', 'reservation', resId, { from: 'solicitud/pendiente', to: 'confirmada', reason: 'pago registrado' }, 'info');
+    }
+  }
   if (r.balance === 0 && (r.totalPrice || 0) > 0) {
     if (['confirmada', 'pagado_parcial'].includes(normStatus(r.status))) r.status = 'pagado';
   } else if (paid > 0 && normStatus(r.status) === 'confirmada') {
@@ -2143,6 +2454,7 @@ function recalcReservationTotals(resId) {
   }
   r.updatedAt = nowISO();
   saveJSON(STORAGE_KEYS.RESERVATIONS, reservations);
+  return { confirmed };
 }
 
 // Toast con tipo error
@@ -2205,7 +2517,8 @@ function lbl(t) { return `<label class="block text-xs font-bold text-gray-700 up
 
 /* ---------------- ESPACIOS (FASE 3.3) ---------------- */
 function initSpacesManagement() {
-  document.getElementById('btn-add-space')?.addEventListener('click', () => openSpaceModal());
+  // Solo existen 2 zonas reales: no se permite crear nuevas
+  document.getElementById('btn-add-space')?.remove();
 }
 function renderSpaces() {
   const c = document.getElementById('spaces-list');
@@ -2229,6 +2542,7 @@ function renderSpaces() {
     </div>`).join('');
 }
 function openSpaceModal(id = null) {
+  if (!id) return showToast('Solo existen 2 zonas (Piscina y Salón Climatizado). No se pueden agregar nuevas.', 'error');
   if (!hasPermission('spaces.crud') && currentUser?.role !== 'admin') return showToast('Sin permiso', 'error');
   const s = id ? getSpaceById(id) : { name:'', shortName:'', description:'', icon:'fa-solid fa-building-columns', color:'#1b4332', capacity:50, active:true, sortOrder: spaces.length+1, amenities:[] };
   openGenericModal({
@@ -2268,6 +2582,7 @@ function toggleSpace(id) {
   logAudit('update', 'space', id, { active: s.active }, 'info');
 }
 function deleteSpace(id) {
+  if (VALID_SPACE_IDS.includes(id)) return showToast('Piscina y Salón Climatizado son zonas fijas del sistema.', 'error');
   const used = reservationSpaces.some(rs => rs.spaceId === id);
   if (used) return showToast('No se puede eliminar: tiene reservas asociadas. Desactívalo.', 'error');
   if (!confirm('¿Eliminar este espacio?')) return;
@@ -2374,6 +2689,69 @@ function deleteService(id) { if(!confirm('¿Eliminar servicio?'))return; service
 /* ---------------- REGLAS DE PRECIO (motor flexible) ---------------- */
 function initPricingRulesManagement() {
   document.getElementById('btn-add-pricing-rule')?.addEventListener('click', () => openPricingRuleModal());
+  document.getElementById('btn-manage-holidays')?.addEventListener('click', () => openHolidayManager());
+}
+function updateHolidaysBadge() {
+  const b = document.getElementById('holidays-count-badge');
+  if (!b) return;
+  const n = holidays.filter(h => h.active !== false).length;
+  b.textContent = n;
+  b.classList.toggle('hidden', !n);
+}
+function openHolidayManager() {
+  if (currentUser?.role !== 'admin') return showToast('Solo admin puede gestionar feriados', 'error');
+  const list = holidays.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const today = getTodayStr();
+  openGenericModal({
+    title: 'Días feriados', subtitle: 'Recargo especial por fecha',
+    bodyHtml: `<div class="space-y-2 max-h-[46vh] overflow-y-auto">` + (list.length ? list.map(h => `
+      <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl border ${h.active === false ? 'opacity-60 bg-gray-50' : 'bg-white'} ${h.date < today ? 'border-dashed' : ''}">
+        <span class="text-sm"><b>${h.date}</b> · ${h.name || 'Feriado'}<br><span class="text-xs ${h.date < today ? 'text-gray-400' : 'text-rose-700 font-bold'}">+${formatGs(h.surcharge || 0)} por espacio${h.date < today ? ' · pasado' : ''}${h.active === false ? ' · pausado' : ''}</span></span>
+        <span class="flex gap-1">
+          <button type="button" onclick="openHolidayModal('${h.id}')" class="px-2.5 py-1 rounded-lg bg-gray-100 text-xs font-bold">Editar</button>
+          <button type="button" onclick="toggleHoliday('${h.id}')" class="px-2.5 py-1 rounded-lg bg-gray-100 text-xs font-bold">${h.active === false ? 'Activar' : 'Pausar'}</button>
+          <button type="button" onclick="deleteHoliday('${h.id}')" class="px-2.5 py-1 rounded-lg bg-red-50 text-red-700 text-xs font-bold">Eliminar</button>
+        </span></div>`).join('') : '<p class="text-xs text-gray-400">Sin feriados cargados. Agregá fechas como Navidad, Año Nuevo o feriados nacionales con su recargo.</p>') + `</div>
+    <div class="pt-3 border-t"><button type="button" onclick="openHolidayModal()" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold w-full"><i class="fa-solid fa-plus mr-1"></i>Cargar feriado</button></div>
+    <div class="text-[0.65rem] text-gray-400 pt-1">El recargo se suma al precio de cada espacio en esa fecha (cotizador, reservas y wizard).</div>`,
+    submitLabel: 'Cerrar', onSubmit: () => closeGenericModal()
+  });
+  const cancel = document.getElementById('generic-modal-cancel');
+  if (cancel) cancel.classList.add('hidden');
+}
+function openHolidayModal(id = null) {
+  const h = id ? holidays.find(x => x.id === id) : { date: '', name: '', surcharge: 0, active: true };
+  openGenericModal({
+    title: id ? 'Editar feriado' : 'Cargar feriado', subtitle: 'Precio especial',
+    bodyHtml: `${lbl('Fecha *')}<input name="date" type="date" required value="${h.date || ''}" class="${inputCls()}">
+    ${lbl('Nombre *')}<input name="name" required value="${h.name || ''}" placeholder="Ej: Navidad" class="${inputCls()}">
+    ${lbl('Recargo por espacio (Gs)')}<input name="surcharge" type="number" step="1000" min="0" value="${h.surcharge || 0}" class="${inputCls()}">
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="active" ${h.active !== false ? 'checked' : ''}> Activo</label>`,
+    onSubmit: (d, form) => {
+      if (!d.date) return showToast('Elegí la fecha', 'error');
+      const payload = { date: d.date, name: d.name.trim() || 'Feriado', surcharge: parseInt(d.surcharge) || 0, active: !!form.querySelector('[name="active"]').checked };
+      if (id) { Object.assign(holidays.find(x => x.id === id), payload); logAudit('update', 'holiday', id, payload, 'info'); }
+      else {
+        if (holidays.some(x => x.date === payload.date && x.active !== false)) return showToast('Ya hay un feriado activo esa fecha. Editalo.', 'error');
+        const nh = { id: generateId('hol'), ...payload }; holidays.push(nh); logAudit('create', 'holiday', nh.id, payload, 'info');
+      }
+      saveJSON(STORAGE_KEYS.HOLIDAYS, holidays);
+      updateHolidaysBadge(); openHolidayManager(); showToast('Feriado guardado', 'success');
+    }
+  });
+}
+function toggleHoliday(id) {
+  const h = holidays.find(x => x.id === id); if (!h) return;
+  h.active = h.active === false ? true : false;
+  saveJSON(STORAGE_KEYS.HOLIDAYS, holidays);
+  updateHolidaysBadge(); openHolidayManager();
+}
+function deleteHoliday(id) {
+  if (!confirm('¿Eliminar este feriado?')) return;
+  holidays = holidays.filter(x => x.id !== id);
+  saveJSON(STORAGE_KEYS.HOLIDAYS, holidays);
+  updateHolidaysBadge(); openHolidayManager();
+  logAudit('delete', 'holiday', id, {}, 'warning');
 }
 function renderPricingRules() {
   const c = document.getElementById('pricing-rules-list');
@@ -2557,7 +2935,7 @@ function drawFinanceCharts(period) {
   // ingresos por espacio (vía reservationSpaces)
   const bySpace = {};
   reservationSpaces.forEach(rs=>{
-    const r = reservations.find(x=>x.id===rs.reservationId); if(!r||!isActiveReservation(r)) return;
+    const r = reservations.find(x=>x.id===rs.reservationId); if(!r||!isBlockingReservation(r)) return;
     const prim = getPrimaryDateOfReservation(r); const m = prim?monthKey(prim):null;
     if(!m || !months.includes(m)) return;
     const share = 1 / Math.max(1, getSpacesOfReservation(r.id).length);
@@ -2682,6 +3060,46 @@ function openExpenseDetail(id){
     submitLabel:'Cerrar',onSubmit:()=>closeGenericModal()});
 }
 function deleteExpense(id){ if(currentUser?.role!=='admin')return showToast('Solo admin puede eliminar egresos','error'); if(!confirm('¿Eliminar gasto?'))return; expenses=expenses.filter(x=>x.id!==id);saveJSON(STORAGE_KEYS.EXPENSES,expenses);renderExpenses();renderFinances();renderProfitability();logAudit('delete','expense',id,{},'warning'); }
+/* ---- Encuestas de satisfacción (respuestas desde la web) ---- */
+const SURVEY_DIMS = [
+  { key: 'atencion', label: 'Atención recibida' },
+  { key: 'limpieza', label: 'Limpieza del predio' },
+  { key: 'instalaciones', label: 'Instalaciones (piscina, salón)' },
+  { key: 'calidad_precio', label: 'Relación precio / calidad' },
+  { key: 'recomendar', label: '¿Nos recomendarías?' }
+];
+function renderSurveys() {
+  const c = document.getElementById('surveys-list');
+  if (!c) return;
+  const kpi = document.getElementById('surveys-kpis');
+  if (!surveys.length) {
+    if (kpi) kpi.innerHTML = '';
+    c.innerHTML = '<div class="p-8 text-center text-sm text-gray-400">Aún no hay respuestas. Compartí el link <b>#encuesta</b> de la web a clientes que ya realizaron su evento.</div>';
+    return;
+  }
+  const avg = k => surveys.reduce((a, s) => a + ((s.ratings && s.ratings[k]) || 0), 0) / surveys.length;
+  const stars = v => '★'.repeat(Math.round(v)) + '<span class="text-gray-300">' + '★'.repeat(5 - Math.round(v)) + '</span>';
+  if (kpi) kpi.innerHTML = `<div class="bg-white p-4 rounded-2xl border shadow-sm text-center"><span class="font-serif text-3xl font-extrabold text-amber-500">${avg('recomendar').toFixed(1)}</span><div class="text-amber-500 text-sm">${stars(avg('recomendar'))}</div><span class="text-[0.65rem] uppercase font-bold text-gray-500">Recomendación · ${surveys.length} respuestas</span></div>` +
+    SURVEY_DIMS.slice(0, 4).map(d => `<div class="bg-white p-4 rounded-2xl border shadow-sm text-center"><span class="font-serif text-2xl font-bold text-forest-900">${avg(d.key).toFixed(1)}</span><div class="text-amber-500 text-xs">${stars(avg(d.key))}</div><span class="text-[0.65rem] uppercase font-bold text-gray-500">${d.label}</span></div>`).join('');
+  c.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-3 py-2">Cliente</th><th class="px-3 py-2">Evento</th><th class="px-3 py-2 text-center">Prom.</th><th class="px-3 py-2">Comentario</th><th class="px-3 py-2 text-right">Acc.</th></tr></thead><tbody class="divide-y">` +
+    surveys.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map(s => {
+      const vals = SURVEY_DIMS.map(d => (s.ratings && s.ratings[d.key]) || 0);
+      const m = (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+      return `<tr class="hover:bg-gray-50"><td class="px-3 py-2 font-bold">${s.name}<div class="text-xs text-gray-400 font-normal">${s.createdAt ? new Date(s.createdAt).toLocaleDateString('es-PY') : ''}</div></td>
+      <td class="px-3 py-2 text-xs">${s.eventDate || '-'} · ${s.spacesLabel || (s.spaceId ? (getSpaceById(s.spaceId)?.shortName || '') : '-')}</td>
+      <td class="px-3 py-2 text-center font-bold text-amber-600">${m} ★</td>
+      <td class="px-3 py-2 text-xs text-gray-600">${s.comment || '<span class="text-gray-300">—</span>'}</td>
+      <td class="px-3 py-2 text-right"><button onclick="deleteSurvey('${s.id}')" class="p-2 text-gray-400 hover:text-red-600"><i class="fa-regular fa-trash-can"></i></button></td></tr>`;
+    }).join('') + `</tbody></table></div>`;
+}
+function deleteSurvey(id) {
+  if (currentUser?.role !== 'admin') return showToast('Solo admin', 'error');
+  if (!confirm('¿Eliminar esta respuesta?')) return;
+  surveys = surveys.filter(s => s.id !== id);
+  saveJSON(STORAGE_KEYS.SURVEYS, surveys);
+  renderSurveys();
+  logAudit('delete', 'survey', id, {}, 'warning');
+}
 /* ---- CRUD categorías de gasto (padre/hija, personalizadas) ---- */
 function refreshCategorySelects() {
   const fc = document.getElementById('filter-expense-category');
@@ -2897,7 +3315,7 @@ function profitabilityData(period='month') {
     let inc=0;
     reservationSpaces.forEach(rs=>{
       if(rs.spaceId!==s.id)return;
-      const r=reservations.find(x=>x.id===rs.reservationId);if(!r||!isActiveReservation(r))return;
+      const r=reservations.find(x=>x.id===rs.reservationId);if(!r||!isBlockingReservation(r))return;
       const d=getPrimaryDateOfReservation(r);if(!d||!inRange(d,range))return;
       inc += (r.totalPrice||0) / Math.max(1,getSpacesOfReservation(r.id).length);
     });
@@ -2969,6 +3387,31 @@ function initSettingsManagement(){
     settings.autoConfirmEnabled=!!document.getElementById('setting-auto-confirm')?.checked;
     settings.maintenanceMode=!!document.getElementById('setting-maintenance')?.checked;
     settings.backupEnabled=!!document.getElementById('setting-backup')?.checked;
+    const prevTermsVer=(settings.terms&&settings.terms.version)||'';
+    const termsBody=document.getElementById('setting-terms-body')?.value||'';
+    if(!termsBody.trim()){ showToast('El reglamento no puede quedar vacío.','error'); return; }
+    const termsVer=document.getElementById('setting-terms-version')?.value.trim()||'v1.0';
+    settings.terms={
+      active:!!document.getElementById('setting-terms-active')?.checked,
+      version:termsVer,
+      updatedAt:termsVer!==prevTermsVer?getTodayStr():(settings.terms.updatedAt||getTodayStr()),
+      title:document.getElementById('setting-terms-title')?.value.trim()||getDefaultSettings().terms.title,
+      checkboxLabel:document.getElementById('setting-terms-checkbox')?.value.trim()||getDefaultSettings().terms.checkboxLabel,
+      body:termsBody
+    };
+    const depMode=document.getElementById('setting-deposit-mode')?.value||'percent';
+    settings.deposit={
+      active:!!document.getElementById('setting-deposit-active')?.checked,
+      mode:depMode,
+      percent:depMode==='percent'?(parseFloat(document.getElementById('setting-deposit-value')?.value)||50):0,
+      fixed:depMode==='fixed'?(parseInt(document.getElementById('setting-deposit-value')?.value)||0):0,
+      bank:document.getElementById('setting-deposit-bank')?.value||'',
+      holder:document.getElementById('setting-deposit-holder')?.value||'',
+      account:document.getElementById('setting-deposit-account')?.value||'',
+      alias:document.getElementById('setting-deposit-alias')?.value||'',
+      methods:settings.deposit?.methods||['Transferencia','Efectivo'],
+      instructions:document.getElementById('setting-deposit-instructions')?.value||''
+    };
     saveJSON(STORAGE_KEYS.SETTINGS,settings);logAudit('update','settings','global',{company:settings.companyName},'info');showToast('Configuración guardada','success');
   });
   document.getElementById('btn-export-all')?.addEventListener('click',()=>{
@@ -2987,8 +3430,19 @@ function renderSettings(){
   const s=(id,v)=>{const el=document.getElementById(id);if(el&&el.value!==undefined&&document.activeElement!==el)el.value=v??'';};
   s('setting-company-name',settings.companyName);s('setting-company-address',settings.companyAddress);s('setting-company-phone',settings.companyPhone);s('setting-company-email',settings.companyEmail);s('setting-whatsapp',settings.whatsappNumber);
   s('setting-currency',settings.currency);s('setting-currency-symbol',settings.currencySymbol);s('setting-timezone',settings.timezone);s('setting-date-format',settings.dateFormat);s('setting-alert-days',settings.alertDaysBefore);
+  const dep=settings.deposit||{};
+  s('setting-deposit-mode',dep.mode||'percent');
+  s('setting-deposit-value',dep.mode==='fixed'?(dep.fixed||0):(dep.percent||50));
+  s('setting-deposit-bank',dep.bank);s('setting-deposit-holder',dep.holder);s('setting-deposit-account',dep.account);s('setting-deposit-alias',dep.alias);
+  s('setting-deposit-instructions',dep.instructions);
   const c=(id,v)=>{const el=document.getElementById(id);if(el)el.checked=!!v;};
   c('setting-auto-confirm',settings.autoConfirmEnabled);c('setting-maintenance',settings.maintenanceMode);c('setting-backup',settings.backupEnabled);
+  c('setting-deposit-active',dep.active);
+  const tm=settings.terms||{};
+  s('setting-terms-title',tm.title);s('setting-terms-version',tm.version);s('setting-terms-checkbox',tm.checkboxLabel);
+  const tb=document.getElementById('setting-terms-body');
+  if(tb&&document.activeElement!==tb)tb.value=tm.body||'';
+  c('setting-terms-active',tm.active);
 }
 function handleImport(e){
   const f=e.target.files?.[0];if(!f)return;
@@ -3004,10 +3458,12 @@ let wizard = null;
 function initWizard() {
   document.getElementById('open-new-res-modal-btn')?.addEventListener('click', () => openWizard());
 }
-function openWizard(defaultDate = null, presetSpaceId = null, presetTurnId = null) {
+function openWizard(defaultDate = null, presetSpaceId = null, presetTurnId = null, presetStart = null, presetEnd = null) {
   wizard = { step: 1, client: { name:'', phone:'', email:'', notes:'' }, spaceIds: [], date: defaultDate || getTodayStr(), endDate: '', guests: 30, turnId: null, customStart:'', customEnd:'', serviceIds: [], discount: 0, totalOverride: null, status: 'pendiente', priceInfo: { total:0, breakdown:[] } };
   if (presetSpaceId && getSpaceById(presetSpaceId)) wizard.spaceIds = [presetSpaceId];
   if (presetTurnId && getTurnById(presetTurnId)) wizard.turnId = presetTurnId;
+  if (presetStart) wizard.customStart = presetStart;
+  if (presetEnd) wizard.customEnd = presetEnd;
   renderWizard();
   const m = document.getElementById('wizard-modal');
   if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
@@ -3039,9 +3495,9 @@ function renderWizard() {
         <div class="text-[0.65rem] font-bold mt-1 ${wizard.spaceIds.includes(s.id)?'text-emerald-700':'text-gray-400'}">${wizard.spaceIds.includes(s.id)?'✓ Seleccionado':'Toca para seleccionar'}</div>
       </button>`).join('') + `</div>
       <div class="flex flex-wrap gap-2 mt-3">
-        <button onclick="wizSetCombo(['salon','piscina'])" class="px-3 py-1.5 rounded-xl bg-cyan-50 border border-cyan-200 text-xs font-bold">Salón + Piscina</button>
-        <button onclick="wizSetCombo(['salon','piscina','quincho'])" class="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold">Todo el predio</button>
         <button onclick="wizSetCombo(['piscina'])" class="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold">Solo Piscina</button>
+        <button onclick="wizSetCombo(['salon'])" class="px-3 py-1.5 rounded-xl bg-cyan-50 border border-cyan-200 text-xs font-bold">Solo Salón</button>
+        <button onclick="wizSetCombo(['salon','piscina'])" class="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold">Salón + Piscina</button>
       </div>`;
   } else if (wizard.step === 3) {
     const multi = !!wizard.endDate;
@@ -3211,7 +3667,130 @@ function wizSave(){
   ds.forEach(d=>wizard.spaceIds.forEach(sid=>reservationSpaces.push({id:generateId('rs'),reservationId:res.id,spaceId:sid,turnId:wizard.turnId,date:d,price:0,customStart:wizard.customStart,customEnd:wizard.customEnd})));
   saveJSON(STORAGE_KEYS.RESERVATIONS,reservations);saveJSON(STORAGE_KEYS.RESERVATION_SPACES,reservationSpaces);
   logAudit('create','reservation',res.id,{client:res.clientName,dates:wizDateLabel(),total},'info');
-  closeWizard();renderDashboard();showToast(`Reserva creada · ${wizDateLabel()} · ${formatGs(total)}`,'success');
+  closeWizard();renderDashboard();notifyDataChanged();showToast(`Reserva creada · ${wizDateLabel()} · ${formatGs(total)}`,'success');
+}
+/* ==========================================================================
+   PAGOS DE SEÑA DEL CLIENTE (con comprobante)
+   - Un registro por reserva + attempts[] (historial de reenvíos, nada se borra)
+   - Estados: PENDIENTE_VERIFICACION | VERIFICADO | RECHAZADO
+     (NO_APLICA es derivado: sin registro). Independientes del estado reserva.
+   - La reserva NUNCA se confirma por el envío: solo VERIFICADO la aplica,
+     reutilizando updateReservationStatus + recalc existentes.
+   - Idempotencia: transiciones válidas controladas en un solo lugar.
+   ========================================================================== */
+const DEPOSIT_STATUS = {
+  PENDING: 'PENDIENTE_VERIFICACION',
+  VERIFIED: 'VERIFICADO',
+  REJECTED: 'RECHAZADO'
+};
+const DEPOSIT_TRANSITIONS = {
+  [DEPOSIT_STATUS.PENDING]: [DEPOSIT_STATUS.VERIFIED, DEPOSIT_STATUS.REJECTED],
+  [DEPOSIT_STATUS.REJECTED]: [DEPOSIT_STATUS.PENDING], // reenvío del cliente
+  [DEPOSIT_STATUS.VERIFIED]: [] // terminal
+};
+const DEPOSIT_REJECT_REASONS = ['Comprobante ilegible', 'Monto incorrecto', 'Pago no encontrado', 'Datos incorrectos', 'Comprobante inválido', 'Otro'];
+/* NOTA DE CONFIANZA (arquitectura 100% frontend): localStorage puede ser
+   manipulado con DevTools. Estas funciones garantizan consistencia,
+   validación e idempotencia DENTRO del navegador (una sola fuente de verdad,
+   transiciones centralizadas, normalización anti-corrupción), pero NO son
+   seguridad de backend: un actor con acceso a DevTools puede alterar datos
+   locales. Para protección real se requeriría servidor con validación propia. */
+/* Normalización anti-corrupción: nunca rompe la app ante JSON/entradas malas */
+function normalizeDeposits(list) {
+  if (!Array.isArray(list)) return [];
+  const validStatus = [DEPOSIT_STATUS.PENDING, DEPOSIT_STATUS.VERIFIED, DEPOSIT_STATUS.REJECTED];
+  const out = [];
+  list.forEach(d => {
+    if (!d || typeof d !== 'object' || typeof d.id !== 'string' || typeof d.reservationId !== 'string') return;
+    if (!validStatus.includes(d.status)) d.status = DEPOSIT_STATUS.PENDING; // visible para revisión, nunca oculto
+    if (!Array.isArray(d.attempts)) d.attempts = d.receipt ? [{ receipt: d.receipt, sentAt: d.sentAt || null, name: '' }] : [];
+    d.amount = Math.max(0, parseInt(d.amount) || 0);
+    out.push(d);
+  });
+  // Una sola fuente: un registro por reserva (conserva el más reciente)
+  const seen = new Set();
+  return out.filter(d => {
+    if (seen.has(d.reservationId)) return false;
+    seen.add(d.reservationId);
+    return true;
+  });
+}
+function normalizeTermsSettings(t) {
+  const fb = getDefaultSettings().terms;
+  const d = Object.assign({}, fb, t && typeof t === 'object' ? t : {});
+  d.active = d.active !== false;
+  d.version = String(d.version || 'v1.0');
+  d.title = String(d.title || fb.title);
+  d.checkboxLabel = String(d.checkboxLabel || fb.checkboxLabel);
+  d.body = String(d.body || '');
+  d.updatedAt = String(d.updatedAt || '');
+  return d;
+}
+function normalizeDepositSettings(dep) {
+  const fb = getDefaultSettings().deposit;
+  const d = Object.assign({}, fb, dep && typeof dep === 'object' ? dep : {});
+  d.active = !!d.active;
+  d.mode = d.mode === 'fixed' ? 'fixed' : 'percent';
+  d.percent = Math.min(100, Math.max(0, parseFloat(d.percent) || 0));
+  d.fixed = Math.max(0, parseInt(d.fixed) || 0);
+  d.methods = Array.isArray(d.methods) && d.methods.length ? d.methods : fb.methods.slice();
+  ['bank', 'holder', 'account', 'alias', 'instructions'].forEach(k => { d[k] = String(d[k] || ''); });
+  return d;
+}
+function getDeposit(reservationId) {
+  return deposits.find(d => d.reservationId === reservationId) || null;
+}
+function depositStatusOf(reservationId) {
+  const d = getDeposit(reservationId);
+  return d ? d.status : 'NO_APLICA';
+}
+function depositBadge(status) {
+  const map = {
+    'NO_APLICA': '<span class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold bg-gray-100 text-gray-500">Sin seña</span>',
+    [DEPOSIT_STATUS.PENDING]: '<span class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold bg-amber-100 text-amber-800 animate-pulse">Pendiente de verificación</span>',
+    [DEPOSIT_STATUS.VERIFIED]: '<span class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold bg-emerald-100 text-emerald-800">Seña verificada</span>',
+    [DEPOSIT_STATUS.REJECTED]: '<span class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold bg-red-100 text-red-700">Seña rechazada</span>'
+  };
+  return map[status] || map['NO_APLICA'];
+}
+/* Monto de seña según configuración central (NO hardcodear en otro lado) */
+function calcDepositAmount(totalPrice) {
+  const cfg = settings.deposit || {};
+  if (!cfg.active) return 0;
+  if (cfg.mode === 'fixed') return Math.max(0, parseInt(cfg.fixed) || 0);
+  const pct = Math.min(100, Math.max(0, parseFloat(cfg.percent) || 50));
+  return Math.round((totalPrice || 0) * pct / 100);
+}
+/* Transición idempotente: valida origen, destino, rol y doble ejecución */
+function depositTransition(reservationId, toStatus, { by = null, reason = '', amount = null } = {}) {
+  const d = getDeposit(reservationId);
+  if (!d) return { ok: false, error: 'Sin registro de seña' };
+  if (!hasPermission('deposits.verify') && currentUser?.role !== 'admin') {
+    return { ok: false, error: 'Sin permiso' };
+  }
+  const from = d.status;
+  if (from === toStatus) return { ok: false, error: 'La transacción ya está en ese estado' };
+  if (!(DEPOSIT_TRANSITIONS[from] || []).includes(toStatus)) {
+    return { ok: false, error: `Transición inválida (${from} → ${toStatus})` };
+  }
+  d.status = toStatus;
+  d.updatedAt = nowISO();
+  if (amount != null) d.amount = amount;
+  if (toStatus === DEPOSIT_STATUS.VERIFIED) {
+    d.verifiedBy = by || currentUser?.id || 'admin';
+    d.verifiedAt = nowISO();
+    d.rejectReason = '';
+  }
+  if (toStatus === DEPOSIT_STATUS.REJECTED) {
+    d.verifiedBy = by || currentUser?.id || 'admin';
+    d.verifiedAt = nowISO();
+    d.rejectReason = reason || 'Otro';
+  }
+  saveJSON(STORAGE_KEYS.DEPOSITS, deposits);
+  logAudit('deposit_' + toStatus.toLowerCase(), 'deposit', d.id,
+    { reservation: reservationId, from, to: toStatus, reason: reason || '', by: d.verifiedBy || '' },
+    toStatus === DEPOSIT_STATUS.REJECTED ? 'warning' : 'info');
+  return { ok: true, from, deposit: d };
 }
 /* ---- Pagos ---- */
 function openPaymentModal(resId){
@@ -3226,16 +3805,132 @@ function openPaymentModal(resId){
     onSubmit:d=>{
       const amt=parseInt(d.amount)||0;
       if(amt<=0)return showToast('Monto inválido','error');
-      if(amt>r.balance)return showToast('Supera el saldo','error');
+      // Si la reserva aún no tiene precio ("a convenir"), el primer pago lo fija
+      if((r.totalPrice||0)===0){
+        r.totalPrice=amt;
+        logAudit('update','reservation',resId,{totalPrice:amt,reason:'precio fijado con primer pago'},'info');
+      }
+      if(amt>r.balance&&r.balance>0)return showToast('Supera el saldo','error');
       const p={id:generateId('pay'),reservationId:resId,amount:amt,date:d.date,method:d.method,notes:d.notes,status:'cobrado',recordedBy:currentUser?.id,createdAt:nowISO()};
       payments.unshift(p);saveJSON(STORAGE_KEYS.PAYMENTS,payments);
       // ingreso automático
       const inc={id:generateId('inc'),date:d.date,concept:`Pago reserva · ${r.clientName}`,reservationId:resId,clientName:r.clientName,amount:amt,paymentMethod:d.method,recordedBy:currentUser?.id,notes:d.notes||'',createdAt:nowISO()};
       incomes.unshift(inc);saveJSON(STORAGE_KEYS.INCOMES,incomes);
-      recalcReservationTotals(resId);
+      const calc=recalcReservationTotals(resId);
       logAudit('create','payment',p.id,{reservation:resId,amount:amt},'info');
-      closeGenericModal();renderDashboard();showToast(`Pago registrado · Saldo ${formatGs(reservations.find(x=>x.id===resId).balance)}`,'success');
+      closeGenericModal();renderDashboard();notifyDataChanged();
+      if(!calc.confirmed)showToast('Pago registrado, pero los espacios ya están ocupados: la reserva sigue pendiente. Reubica la fecha.','error');
+      else showToast(`Pago registrado · Saldo ${formatGs(reservations.find(x=>x.id===resId).balance)}`,'success');
     }});
+}
+/* ---- Detalle de seña en la reserva (admin) ---- */
+function depositDetailHtml(resId) {
+  const d = getDeposit(resId);
+  if (!d) return `<div class="text-xs text-gray-400 bg-gray-50 rounded-xl border p-3">Seña: <b>Sin seña</b> (el cliente no optó por pagar seña).</div>`;
+  const last = (d.attempts || [])[(d.attempts || []).length - 1] || {};
+  const canAct = hasPermission('deposits.verify') || currentUser?.role === 'admin';
+  let html = `<div class="text-sm bg-amber-50/60 rounded-xl border border-amber-200 p-3 space-y-2">
+    <div class="flex items-center justify-between"><b>Seña del cliente</b>${depositBadge(d.status)}</div>
+    <div class="grid grid-cols-2 gap-2 text-xs">
+      <div>Monto: <b>${formatGs(d.amount)}</b></div>
+      <div>Método: <b>${d.method || '-'}</b></div>
+      <div>Declarado: ${d.payDate || '-'}</div>
+      <div>Enviado: ${d.sentAt ? new Date(d.sentAt).toLocaleString('es-PY') : '-'}</div>
+    </div>
+    ${d.status === DEPOSIT_STATUS.REJECTED && d.rejectReason ? `<div class="text-xs text-red-700">Motivo: <b>${d.rejectReason}</b></div>` : ''}
+    ${d.status === DEPOSIT_STATUS.VERIFIED && d.verifiedAt ? `<div class="text-xs text-emerald-700">Verificado por ${d.verifiedBy || '-'} · ${new Date(d.verifiedAt).toLocaleString('es-PY')}</div>` : ''}
+    ${(d.attempts || []).length > 1 ? `<div class="text-xs text-gray-500">Intentos: ${d.attempts.length} (se conserva el historial)</div>` : ''}
+    ${d.receipt ? `<a href="${d.receipt}" target="_blank" rel="noopener"><img src="${d.receipt}" class="max-h-56 rounded-2xl border cursor-zoom-in" alt="Comprobante de seña"></a>
+    <div class="text-[0.65rem] text-gray-400">Clic para ampliar en tamaño completo.</div>` : '<div class="text-xs text-gray-400">Sin imagen adjunta.</div>'}
+  </div>`;
+  if (canAct && d.status === DEPOSIT_STATUS.PENDING) {
+    const waV = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(`¡Hola ${last.clientName || ''}! 🌿 Te avisamos desde *${settings.companyName}*: tu pago de seña de *${formatGs(d.amount)}* fue *VERIFICADO* y tu reserva quedó *CONFIRMADA*. ¡Gracias!`)}`;
+    const waR = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(`¡Hola! Te avisamos desde *${settings.companyName}*: tu comprobante de seña fue *RECHAZADO*. Motivo: ${d.rejectReason || ''}. Podés reenviarlo desde la web. ¡Gracias!`)}`;
+    html += `<div class="flex flex-wrap gap-2" id="deposit-actions">
+      <button type="button" onclick="verifyDeposit('${resId}')" class="btn-forest px-3 py-1.5 rounded-lg text-xs font-bold"><i class="fa-solid fa-check mr-1"></i>Verificar y aplicar reserva</button>
+      <button type="button" onclick="closeGenericModal()" class="px-3 py-1.5 rounded-lg border text-xs font-bold">Verificar más tarde</button>
+      <button type="button" onclick="openRejectDeposit('${resId}')" class="px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-bold">Rechazar…</button>
+      <a href="${waV}" target="_blank" id="wa-verify-link" class="hidden px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"><i class="fa-brands fa-whatsapp mr-1"></i>Avisar verificación</a>
+      <a href="${waR}" target="_blank" id="wa-reject-link" class="hidden px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"><i class="fa-brands fa-whatsapp mr-1"></i>Avisar rechazo</a>
+    </div>`;
+  }
+  return html;
+}
+function waPhoneOf(resId) {
+  const r = reservations.find(x => x.id === resId);
+  const clean = String(r?.phone || '').replace(/[^0-9]/g, '');
+  return clean.startsWith('595') ? clean : '595' + (clean.startsWith('0') ? clean.substring(1) : clean);
+}
+/* Cola de señas pendientes */
+function openDepositQueue() {
+  const list = deposits.filter(d => d.status === DEPOSIT_STATUS.PENDING)
+    .sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
+  openGenericModal({
+    title: `Señas por verificar (${list.length})`, subtitle: 'Comprobantes pendientes',
+    bodyHtml: list.length ? `<div class="space-y-2 max-h-[50vh] overflow-y-auto">` + list.map(d => {
+      const r = reservations.find(x => x.id === d.reservationId) || {};
+      return `<div class="flex items-center justify-between gap-2 p-3 rounded-xl border bg-white">
+        <span class="text-sm"><b>${r.clientName || '?'}</b> · ${getPrimaryDateOfReservation(r) || '-'} · <b>${formatGs(d.amount)}</b><br>
+        <span class="text-xs text-gray-400">Enviado ${d.sentAt ? new Date(d.sentAt).toLocaleString('es-PY') : '-'}</span></span>
+        <button type="button" onclick="closeGenericModal();openReservationDetail('${d.reservationId}')" class="px-3 py-1.5 rounded-lg btn-forest text-white text-xs font-bold whitespace-nowrap">Revisar</button>
+      </div>`;
+    }).join('') + `</div>` : '<p class="text-sm text-gray-400">Sin pendientes. 🎉</p>',
+    submitLabel: 'Cerrar', onSubmit: () => closeGenericModal()
+  });
+}
+/* A. VERIFICADO Y APLICAR RESERVA (reutiliza el flujo existente) */
+function verifyDeposit(resId) {
+  if (!confirm('¿Confirmar que el pago fue verificado y aplicar la reserva?')) return;
+  const t = depositTransition(resId, DEPOSIT_STATUS.VERIFIED);
+  if (!t.ok) { showToast(t.error, 'error'); return; }
+  const d = t.deposit;
+  // Defensa en profundidad: si ya existe el pago de esta seña, no duplicar
+  const already = payments.some(p => p.reservationId === resId && p.notes === 'Seña verificada' && p.amount === d.amount);
+  if (already) {
+    logAudit('deposit_duplicate_blocked', 'deposit', d.id, { reservation: resId }, 'warning');
+    closeGenericModal(); renderDashboard(); notifyDataChanged();
+    showToast('Esta seña ya fue aplicada. No se duplicó el pago.', 'info');
+    return;
+  }
+  // Registrar el pago verificado con el mecanismo existente (genera ingreso + confirma)
+  payments.unshift({ id: generateId('pay'), reservationId: resId, amount: d.amount, date: (d.payDate || getTodayStr()), method: d.method || 'Transferencia', notes: 'Seña verificada', status: 'cobrado', recordedBy: currentUser?.id, createdAt: nowISO() });
+  saveJSON(STORAGE_KEYS.PAYMENTS, payments);
+  const inc = { id: generateId('inc'), date: (d.payDate || getTodayStr()), concept: `Seña verificada · ${(reservations.find(x => x.id === resId) || {}).clientName || ''}`, reservationId: resId, clientName: (reservations.find(x => x.id === resId) || {}).clientName || '', amount: d.amount, paymentMethod: d.method || 'Transferencia', recordedBy: currentUser?.id, notes: 'Seña verificada', createdAt: nowISO() };
+  incomes.unshift(inc); saveJSON(STORAGE_KEYS.INCOMES, incomes);
+  const calc = recalcReservationTotals(resId); // confirma la reserva con la lógica vigente
+  closeGenericModal(); renderDashboard(); notifyDataChanged();
+  if (!calc.confirmed) showToast('Seña verificada, pero los espacios están ocupados: reubica la fecha.', 'error');
+  else {
+    showToast('Seña verificada y reserva aplicada. Avisá al cliente 👇', 'success');
+    openReservationDetail(resId);
+    setTimeout(() => document.getElementById('wa-verify-link')?.classList.remove('hidden'), 50);
+  }
+}
+/* C. RECHAZAR (con motivo, sin borrar comprobante) */
+function openRejectDeposit(resId) {
+  openGenericModal({
+    title: 'Rechazar comprobante', subtitle: 'Se solicita motivo',
+    bodyHtml: `${lbl('Motivo *')}<select name="reason" class="${inputCls()}">${DEPOSIT_REJECT_REASONS.map(m => `<option>${m}</option>`).join('')}</select>
+    ${lbl('Detalle (opcional)')}<input name="detail" placeholder="Ej: el monto visible es Gs. 300.000" class="${inputCls()}">`,
+    submitLabel: 'Rechazar',
+    onSubmit: (f) => {
+      if (!confirm('¿Rechazar este comprobante?')) return;
+      const reason = f.detail ? `${f.reason} — ${f.detail}` : f.reason;
+      const t = depositTransition(resId, DEPOSIT_STATUS.REJECTED, { reason });
+      if (!t.ok) { showToast(t.error, 'error'); return; }
+      closeGenericModal(); closeGenericModal(); renderDashboard(); notifyDataChanged();
+      showToast('Comprobante rechazado. Avisá al cliente 👇', 'success');
+      openReservationDetail(resId);
+      setTimeout(() => {
+        const r = reservations.find(x => x.id === resId) || {};
+        const a = document.getElementById('wa-reject-link');
+        if (a) {
+          a.href = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(`¡Hola ${r.clientName || ''}! Te avisamos desde *${settings.companyName}*: tu comprobante de seña fue *RECHAZADO*. Motivo: ${reason}. Podés reenviarlo desde la web. ¡Gracias!`)}`;
+          a.classList.remove('hidden');
+        }
+      }, 50);
+    }
+  });
 }
 /* ---- Recibo imprimible (reserva o pago individual) ---- */
 function openReceipt(resId, paymentId = null) {
@@ -3277,7 +3972,7 @@ function deleteReservation(id){
   reservationSpaces=reservationSpaces.filter(x=>x.reservationId!==id);
   saveJSON(STORAGE_KEYS.RESERVATIONS,reservations);saveJSON(STORAGE_KEYS.RESERVATION_SPACES,reservationSpaces);
   logAudit('delete','reservation',id,{client:r.clientName},'warning');
-  renderDashboard();showToast('Reserva eliminada','info');
+  renderDashboard(); notifyDataChanged(); showToast('Reserva eliminada','info');
 }
 function getWhatsAppLinkForClient(r){
   const cleanPhone=String(r.phone||'').replace(/[^0-9]/g,'');
@@ -3294,7 +3989,7 @@ function getWhatsAppLinkForClient(r){
   return `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
 }
 // El botón "Nueva Reserva" abre el wizard (el modal legacy queda como fallback)
-function openNewReservationModal(defaultDate=null, presetSpaceId=null, presetTurnId=null){ openWizard(defaultDate, presetSpaceId, presetTurnId); }
+function openNewReservationModal(defaultDate=null, presetSpaceId=null, presetTurnId=null, presetStart=null, presetEnd=null){ openWizard(defaultDate, presetSpaceId, presetTurnId, presetStart, presetEnd); }
 // Modal de día enriquecido: lista todas las reservas del día + espacios
 function openDayDetailModal(dateStr, status, res, isBlocked){
   const modal=document.getElementById('day-modal');if(!modal)return;
@@ -3310,7 +4005,7 @@ function openDayDetailModal(dateStr, status, res, isBlocked){
   let html=`<div class="mb-3 flex items-center gap-2"><span class="text-xs text-gray-500 font-semibold">Estado:</span>${badge}</div>`;
   // disponibilidad por espacio/turno
   html+=`<div class="grid grid-cols-2 gap-2 mb-3">`+spaces.filter(s=>s.active).map(s=>{
-    const occ=reservationSpaces.filter(rs=>rs.spaceId===s.id&&rs.date===dateStr&&isActiveReservation(reservations.find(r=>r.id===rs.reservationId)||{}));
+    const occ=reservationSpaces.filter(rs=>rs.spaceId===s.id&&rs.date===dateStr&&isBlockingReservation(reservations.find(r=>r.id===rs.reservationId)));
     return `<div class="text-xs p-2 rounded-xl border ${occ.length?'bg-red-50 border-red-200':'bg-emerald-50 border-emerald-200'}"><b>${s.shortName}</b><br>${occ.length?('🔴 '+occ.map(o=>getTurnById(o.turnId)?.shortName).join(', ')):'🟢 Libre'}</div>`;
   }).join('')+`</div>`;
   if(dayRes.length){ html+=dayRes.map(r=>{const sps=getSpacesOfReservation(r.id);const bal=Math.max(0,(r.totalPrice??r.estimatedPrice??0)-(r.paidAmount||0));return `<div class="bg-gray-50 p-3 rounded-xl border text-sm space-y-1"><div class="flex justify-between items-center"><b>${r.clientName}</b>${statusBadge(r.status)}</div><div class="text-xs text-gray-500">${r.phone} · ${sps.map(x=>`${getSpaceById(x.spaceId)?.shortName}·${getTurnById(x.turnId)?.shortName}`).join(' + ')||r.eventType||''}</div><div class="text-xs">Total <b>${formatGs(r.totalPrice??r.estimatedPrice)}</b> · Saldo <b class="${bal>0?'text-red-600':'text-emerald-600'}">${formatGs(bal)}</b></div><div class="flex gap-1.5 pt-1"><button onclick="openReservationDetail('${r.id}')" class="px-2.5 py-1 rounded-lg bg-white border text-xs font-bold">Detalle</button><button onclick="openPaymentModal('${r.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-bold">Pago</button><a href="${getWhatsAppLinkForClient(r)}" target="_blank" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold">WhatsApp</a></div></div>`;}).join(''); }
@@ -3339,10 +4034,18 @@ function renderAlerts(){
   const limit=new Date();limit.setDate(limit.getDate()+days);
   const limitStr=toDateStr(limit);
   const pending=reservations.filter(r=>['pendiente','solicitud'].includes(normStatus(r.status)));
+  const pendingDeposits=deposits.filter(d=>d.status===DEPOSIT_STATUS.PENDING);
   const upcoming=reservations.filter(r=>{const d=getPrimaryDateOfReservation(r);return d&&d>=today&&d<=limitStr&&isActiveReservation(r);}).sort((a,b)=>String(getPrimaryDateOfReservation(a)).localeCompare(String(getPrimaryDateOfReservation(b))));
   const balOf=r=>((r.totalPrice??r.estimatedPrice??0)-(r.paidAmount||0));
   const debts=reservations.filter(r=>isActiveReservation(r)&&balOf(r)>0).sort((a,b)=>balOf(b)-balOf(a));
   let html='';
+  if(pendingDeposits.length&&!dismissedAlerts.has('deposits')){
+    html+=`<div class="flex flex-col sm:flex-row sm:items-center gap-2 p-4 rounded-2xl border border-rose-300 bg-rose-50 shadow-sm">
+      <div class="flex items-center gap-3 flex-1"><div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center"><i class="fa-solid fa-money-bill-wave"></i></div>
+      <div class="text-sm"><b>Pagos pendientes de verificación: ${pendingDeposits.length}</b><span class="text-gray-500"> · ${pendingDeposits.slice(0,2).map(d=>{const r=reservations.find(x=>x.id===d.reservationId)||{};return `${r.clientName||'?'} (${formatGs(d.amount)})`;}).join(', ')}${pendingDeposits.length>2?'…':''}</span></div></div>
+      <div class="flex gap-2"><button onclick="openDepositQueue()" class="px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700">Revisar</button>
+      <button onclick="dismissAlert('deposits')" class="px-3 py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-gray-600">Ocultar</button></div></div>`;
+  }
   if(pending.length&&!dismissedAlerts.has('pending')){
     html+=`<div class="flex flex-col sm:flex-row sm:items-center gap-2 p-4 rounded-2xl border border-amber-200 bg-amber-50 shadow-sm">
       <div class="flex items-center gap-3 flex-1"><div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center"><i class="fa-solid fa-bell"></i></div>
@@ -3416,7 +4119,7 @@ function renderReservationsTable(){
     return `<tr class="hover:bg-gray-50/80"><td class="px-4 py-3"><div class="font-bold text-gray-900">${r.clientName}</div><a href="tel:${r.phone}" class="text-xs text-forest-700">${r.phone}</a></td>
     <td class="px-4 py-3"><div class="font-semibold text-gray-800">${d}</div><div class="text-xs text-gray-400">${spTxt}</div></td>
     <td class="px-4 py-3"><div class="font-bold text-gray-900">${formatGs(r.totalPrice??r.estimatedPrice)}</div><div class="text-xs ${bal>0?'text-red-600 font-bold':'text-emerald-600'}">Saldo ${formatGs(Math.max(0,bal))}</div></td>
-    <td class="px-4 py-3 text-center">${statusBadge(r.status)}</td>
+    <td class="px-4 py-3 text-center">${statusBadge(r.status)}<div class="mt-1">${depositBadge(depositStatusOf(r.id))}</div></td>
     <td class="px-4 py-3 text-right whitespace-nowrap space-x-1">
       <button onclick="openReservationDetail('${r.id}')" title="Ver detalle" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"><i class="fa-solid fa-eye"></i></button>
       <button onclick="openPaymentModal('${r.id}')" title="Registrar pago" class="p-2 rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200"><i class="fa-solid fa-money-bill-wave"></i></button>
@@ -3440,26 +4143,424 @@ function openReservationDetail(id){
       <div class="text-sm"><b>Espacios / turnos</b>${sps.length?sps.map(x=>`<div class="text-xs p-2 border rounded-lg mt-1">${getSpaceById(x.spaceId)?.name} · ${getTurnById(x.turnId)?.name} · ${x.date}</div>`).join(''):'<div class="text-xs text-gray-400">Legacy: '+(r.eventType||'-')+'</div>'}</div>
       <div class="text-sm"><b>Pagos (${pays.length})</b>${pays.map(p=>`<div class="text-xs flex justify-between p-2 bg-gray-50 rounded-lg border mt-1"><span>${p.date} · ${p.method}</span><b>${formatGs(p.amount)}</b></div>`).join('')||'<div class="text-xs text-gray-400">Sin pagos</div>'}</div>
       ${r.notes?`<div class="text-xs text-gray-500">Notas: ${r.notes}</div>`:''}
+      ${r.termsAccepted?`<div class="text-xs text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200 p-2">✅ Reglamento aceptado (${r.termsVersion||'s/v'}) · ${r.termsAcceptedAt?new Date(r.termsAcceptedAt).toLocaleString('es-PY'):''}</div>`:`<div class="text-xs text-gray-400 bg-gray-50 rounded-xl border p-2">Reglamento: sin aceptación registrada.</div>`}
+      ${depositDetailHtml(id)}
       <div class="flex flex-wrap gap-2"><button type="button" onclick="openReceipt('${r.id}')" class="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-bold hover:bg-gray-100"><i class="fa-solid fa-print mr-1"></i>Imprimir recibo / confirmación</button></div>
       ${nextStates.length?`${lbl('Cambiar estado')}<div class="flex flex-wrap gap-2">`+nextStates.map(s=>`<button type="button" onclick="updateReservationStatus('${r.id}','${s}');closeGenericModal();openReservationDetail('${r.id}')" class="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-gray-100">${STATUS_META[s]?.l||s}</button>`).join('')+`</div>`:''}
       <div class="text-xs"><b>Historial</b>${hist.map(h=>`<div class="text-gray-500">· ${new Date(h.timestamp).toLocaleString('es-PY')} — ${h.userName}: ${h.action} ${h.entityType}</div>`).join('')||'<div class="text-gray-400">Sin historial</div>'}</div>`,
     submitLabel:'Registrar pago', onSubmit:()=>{closeGenericModal();openPaymentModal(id);}});
 }
+/* ==========================================================================
+   VISTA AVANZADA "Más detalles" + SINCRONIZACIÓN EN VIVO
+   Reutiliza: reservationSpaces, evaluatePrice, checkAvailability,
+   openWizard (flujo central), openReservationDetail, STATUS_META.
+   ========================================================================== */
+let detailMode = 'menos'; // 'menos' | 'mas'
+let advMode = 'week';     // 'day' | 'week' | 'month' | 'year'
+const ADV_START = 8 * 60, ADV_END = 20 * 60; // 08:00–20:00
+const LIVE_KEY = 'quinta_booking_live';
+const LIVE_TTL_MS = 90000;
+let __bc = null;
+let __renderT = null;
+
+function fmtHHMM(min) {
+  const m = ((min % (24 * 60)) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+function escAttr(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+/* Suma un día a YYYY-MM-DD sin problemas de zona horaria (panel en vivo) */
+function bookingAddDaysClient(dateStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const dt = new Date(y, m - 1, d + 1);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+/* Cotización pura reutilizable (wizard + panel en vivo usan LA MISMA) */
+function quoteTotal({ spaceIds, turnId, dates, guests = 30, serviceIds = [], discount = 0, customStart = null, customEnd = null }) {
+  const ds = dates && dates.length ? dates : [getTodayStr()];
+  const agg = {};
+  ds.forEach(d => {
+    evaluatePrice(spaceIds, turnId, d, guests, null, customStart, customEnd).breakdown.forEach(b => {
+      agg[b.spaceId] = agg[b.spaceId] || { price: 0, days: 0 };
+      agg[b.spaceId].price += b.price; agg[b.spaceId].days++;
+    });
+  });
+  const subtotal = Object.values(agg).reduce((a, b) => a + b.price, 0);
+  const svcTotal = serviceIds.map(id => services.find(s => s.id === id)).filter(Boolean).reduce((a, s) => a + (s.price || 0), 0);
+  return Math.max(0, subtotal + svcTotal - (discount || 0));
+}
+
+function initAdvCalendar() {
+  document.querySelectorAll('.cal-detail-btn').forEach(b => {
+    b.addEventListener('click', () => setDetailMode(b.getAttribute('data-detail')));
+  });
+  document.querySelectorAll('.cal-adv-btn').forEach(b => {
+    b.addEventListener('click', () => setAdvMode(b.getAttribute('data-mode')));
+  });
+}
+function paintSegBtns(selector, attr, value) {
+  document.querySelectorAll(selector).forEach(b => {
+    const on = b.getAttribute(attr) === value;
+    b.classList.toggle('bg-forest-800', on);
+    b.classList.toggle('text-white', on);
+    b.classList.toggle('shadow', on);
+    b.classList.toggle('text-gray-600', !on);
+  });
+}
+function setDetailMode(d) {
+  detailMode = d;
+  paintSegBtns('.cal-detail-btn', 'data-detail', d);
+  const advModes = document.getElementById('cal-adv-modes');
+  const legacy = document.getElementById('cal-legacy-views');
+  if (advModes) { advModes.classList.toggle('hidden', d !== 'mas'); advModes.classList.toggle('flex', d === 'mas'); }
+  if (legacy) legacy.classList.toggle('hidden', d === 'mas');
+  renderDashboard();
+}
+function setAdvMode(m) {
+  advMode = m;
+  paintSegBtns('.cal-adv-btn', 'data-mode', m);
+  if (m === 'week') advWinInit();
+  renderDashboard();
+}
+
+/* Rango visible según modo avanzado */
+function advVisibleDates() {
+  if (advMode === 'day') return [toDateStr(currentCalendarDate)];
+  if (advMode === 'week') {
+    const mon = weekMonday(currentCalendarDate);
+    return Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(d.getDate() + i); return toDateStr(d); });
+  }
+  if (advMode === 'month') {
+    const y = currentCalendarDate.getFullYear(), m = currentCalendarDate.getMonth();
+    const n = new Date(y, m + 1, 0).getDate();
+    return Array.from({ length: n }, (_, i) => `${y}-${String(m + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`);
+  }
+  return [];
+}
+function advMonthNames() {
+  return ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+}
+
+/* Bloques de un día+zona (incluye pendientes con estilo diferenciado; multi-día/zona = un bloque por celda, misma reserva) */
+function advBlocks(dateStr, spaceId) {
+  return reservationSpaces
+    .filter(rs => rs.spaceId === spaceId && rs.date === dateStr)
+    .map(rs => ({ rs, r: reservations.find(x => x.id === rs.reservationId) }))
+    .filter(({ r }) => r && (isBlockingReservation(r) || ['solicitud', 'pendiente'].includes(normStatus(r.status))))
+    .map(({ rs, r }) => {
+      const iv = rsInterval(rs) || { s: ADV_START, e: ADV_END };
+      return { rs, r, pending: !isBlockingReservation(r), s: iv.s, e: iv.e };
+    });
+}
+function resAggregate(resId) {
+  const r = reservations.find(x => x.id === resId);
+  if (!r) return null;
+  const sps = getSpacesOfReservation(resId);
+  const dates = [...new Set(sps.map(x => x.date))].sort();
+  const zones = [...new Set(sps.map(x => getSpaceById(x.spaceId)?.shortName || x.spaceId))];
+  const first = sps[0];
+  const t = getTurnById(first?.turnId);
+  const hours = first ? `${first.customStart || t?.startTime || ''}–${first.customEnd || t?.endTime || ''}` : '';
+  return { r, dates, zones, hours };
+}
+function advTip(agg) {
+  if (!agg) return '';
+  const d0 = agg.dates[0] || '-', d1 = agg.dates[agg.dates.length - 1] || d0;
+  return `${agg.r.clientName}\nInicio: ${d0} ${agg.hours.split('–')[0] || ''}\nFin: ${d1} ${agg.hours.split('–')[1] || ''}\nZonas: ${agg.zones.join(', ') || '-'}\nEstado: ${STATUS_META[normStatus(agg.r.status)]?.l || ''}\nTotal: ${formatGs(agg.r.totalPrice ?? agg.r.estimatedPrice)}`;
+}
+
+/* Capa de detalle: Menos = vistas legacy; Más = vista avanzada (mismos datos) */
+function renderDetailLayer() {
+  const wrap = document.getElementById('cal-adv-wrap');
+  if (detailMode !== 'mas') {
+    if (wrap) wrap.classList.add('hidden');
+    updateTodayBtn();
+    return;
+  }
+  renderAdv();
+}
+function renderAdv() {
+  const wrap = document.getElementById('cal-adv-wrap');
+  const grid = document.getElementById('cal-adv-grid');
+  const titleEl = document.getElementById('cal-month-title');
+  const monthGrid = document.getElementById('cal-days-grid');
+  const weekGrid = document.getElementById('cal-week-grid');
+  const dayGrid = document.getElementById('cal-day-grid');
+  const weekdayHeaders = document.getElementById('cal-weekday-headers');
+  if (!wrap || !grid) return;
+  // ocultar vistas legacy/menos (incluye la que haya dejado renderCalendar)
+  [monthGrid, weekGrid, dayGrid].forEach(g => g && g.classList.add('hidden'));
+  if (weekdayHeaders) weekdayHeaders.classList.add('hidden');
+  if (advMode !== 'month') wrap.classList.remove('hidden');
+  else wrap.classList.add('hidden');
+
+  const names = advMonthNames();
+  if (advMode === 'year') {
+    if (titleEl) titleEl.textContent = `${currentCalendarDate.getFullYear()}`;
+    renderAdvYear(grid);
+  } else if (advMode === 'month') {
+    // Mes reutiliza la vista mensual existente (misma fuente de datos, sin duplicar)
+    wrap.classList.add('hidden');
+    renderMonthGrid();
+  } else {
+    const days = (advMode === 'week') ? advWinDays() : advVisibleDates();
+    if (advMode === 'day') {
+      const f = currentCalendarDate.toLocaleDateString('es-PY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      if (titleEl) titleEl.textContent = f.charAt(0).toUpperCase() + f.slice(1);
+    } else {
+      const a = parseYMD(days[0]), b = parseYMD(days[days.length - 1]);
+      if (titleEl) titleEl.textContent = `Semana ${a.getDate()} ${names[a.getMonth()]} – ${b.getDate()} ${names[b.getMonth()]} ${b.getFullYear()}`;
+    }
+    renderAdvGrid(grid, days);
+    if (advMode === 'week') {
+      initAdvInfinite();
+      if (advNeedCenter) { advNeedCenter = false; advCenterWindow(); }
+    }
+  }
+  renderSideList(advMode === 'year' ? [] : (advMode === 'week' ? advWinDays() : advVisibleDates()));
+  renderLivePanel();
+  updateTodayBtn();
+}
+
+function renderAdvGrid(grid, days) {
+  if (!days.length) { grid.innerHTML = ''; return; }
+  const activeSpaces = spaces.filter(s => s.active);
+  const Z = activeSpaces.length;
+  const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const todayStr = getTodayStr();
+  const N = days.length;
+  const SPAN = 12 * 60; // 08:00–20:00 en minutos
+  // Columnas: lateral + (días × 12 horas). Filas: día padre + horas + una fila por zona
+  let html = `<div class="adv-hwrap"><div class="adv-grid" style="grid-template-columns:110px repeat(${N * 12}, minmax(34px,1fr));grid-template-rows:56px 26px repeat(${Z}, 64px)">`;
+  // Fila 1: esquina + DÍAS como padres (cada uno abarca sus 12 horas)
+  html += `<div class="adv-hcorner" style="grid-column:1;grid-row:1">Zona \\ Hora</div>`;
+  days.forEach((ds, j) => {
+    const d = parseYMD(ds);
+    const isT = ds === todayStr;
+    html += `<div class="adv-dayhead ${isT ? 'adv-today' : ''}" style="grid-column:${2 + j * 12} / span 12;grid-row:1">${dayNames[(d.getDay() + 6) % 7]}<span class="adv-date">${d.getDate()}/${d.getMonth() + 1}</span></div>`;
+  });
+  // Fila 2: HORAS anidadas dentro de cada día
+  html += `<div class="adv-hcorner" style="grid-column:1;grid-row:2"></div>`;
+  days.forEach((ds, j) => {
+    for (let k = 0; k < 12; k++) {
+      html += `<div class="adv-hcol" style="grid-column:${2 + j * 12 + k};grid-row:2">${String(8 + k).padStart(2, '0')}:00</div>`;
+    }
+  });
+  // Una fila por ZONA (lateral) con sus pistas día×hora y bloques por hora real
+  activeSpaces.forEach((s, zi) => {
+    const zr = 3 + zi;
+    html += `<div class="adv-zonerow" style="grid-column:1;grid-row:${zr}"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${s.color}"></span>${escAttr(s.shortName || s.name)}</div>`;
+    days.forEach((ds, j) => {
+      const past = ds < todayStr;
+      html += `<div class="adv-track ${past ? 'adv-past' : ''}" style="grid-column:${2 + j * 12} / span 12;grid-row:${zr}" ${past ? '' : `onclick="advTrackClick(event,'${ds}','${s.id}')"`}>`;
+      advBlocks(ds, s.id).forEach(b => {
+        const cs = Math.max(b.s, ADV_START), ce = Math.min(b.e, ADV_END);
+        if (ce <= ADV_START || cs >= ADV_END) return;
+        const left = ((cs - ADV_START) / SPAN) * 100;
+        const width = Math.max(5, ((ce - cs) / SPAN) * 100);
+        const agg = resAggregate(b.r.id);
+        const tiny = (ce - cs) <= 60;
+        const style = b.pending
+          ? `background:#fffbeb;border:1px solid ${s.color};border-left:4px solid ${s.color};color:#78350f`
+          : `background:${s.color};color:#fff`;
+        const over = `${b.s < ADV_START ? '↥ ' : ''}${b.e > ADV_END ? ' ↧' : ''}`;
+        html += `<div class="adv-block ${tiny ? 'adv-tiny' : ''}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;${style}" data-tip="${escAttr(advTip(agg))}" onclick="event.stopPropagation();openReservationDetail('${b.r.id}')" role="button" tabindex="0">${escAttr(b.r.clientName.split(' ').slice(0, 2).join(' '))}${over}<span class="adv-sub">${fmtHHMM(b.s)}–${fmtHHMM(b.e)}${b.pending ? ' · pendiente' : ''}</span></div>`;
+      });
+      html += `</div>`;
+    });
+  });
+  grid.innerHTML = html + `</div></div>`;
+}
+/* Clic en una pista: calcula la hora por fraccion horizontal del dia */
+function advTrackClick(e, dateStr, spaceId) {
+  const el = e.currentTarget;
+  const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0, width: 1 };
+  const frac = rect.width ? ((e.clientX || 0) - rect.left) / rect.width : 0;
+  let h = 8 + Math.floor(Math.max(0, Math.min(0.999, frac)) * 12);
+  h = Math.max(8, Math.min(19, isNaN(h) ? 8 : h));
+  const s = `${String(h).padStart(2, '0')}:00`;
+  openWizard(dateStr, spaceId, 'personalizado', s, `${String(h + 1).padStart(2, '0')}:00`);
+}
+function renderAdvYear(grid) {
+  const y = currentCalendarDate.getFullYear();
+  const names = advMonthNames();
+  const todayStr = getTodayStr();
+  let html = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-4">`;
+  for (let m = 0; m < 12; m++) {
+    const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
+    let n = 0;
+    reservationSpaces.forEach(rs => {
+      if (!rs.date.startsWith(prefix)) return;
+      const r = reservations.find(x => x.id === rs.reservationId);
+      if (r && (isBlockingReservation(r) || ['solicitud', 'pendiente'].includes(normStatus(r.status)))) n++;
+    });
+    const isCur = todayStr.startsWith(prefix);
+    html += `<button onclick="advGotoMonth(${m})" class="adv-year-cell p-4 rounded-2xl border text-left ${isCur ? 'border-forest-800 ring-2 ring-forest-800/20 bg-emerald-50/60' : 'border-gray-200 bg-gray-50/60'}">
+      <div class="font-bold text-sm text-forest-900">${names[m]}</div>
+      <div class="font-serif text-2xl font-extrabold ${n ? 'text-forest-900' : 'text-gray-300'}">${n}</div>
+      <div class="text-[0.65rem] text-gray-400 font-bold">ocupaciones</div></button>`;
+  }
+  grid.innerHTML = html + `</div>`;
+}
+function advGotoMonth(m) {
+  currentCalendarDate.setMonth(m);
+  setAdvMode('month');
+}
+
+/* Lista lateral del período visible (auto-sincronizada en cada render) */
+function renderSideList(dates) {
+  const c = document.getElementById('cal-side-list');
+  const label = document.getElementById('side-range-label');
+  if (!c) return;
+  const set = new Set(dates);
+  if (label) label.textContent = dates.length ? `(${dates[0]} → ${dates[dates.length - 1]})` : '';
+  const ids = new Set();
+  reservationSpaces.forEach(rs => { if (set.has(rs.date)) ids.add(rs.reservationId); });
+  reservations.forEach(r => { if (r.date && set.has(r.date)) ids.add(r.id); });
+  const list = [...ids]
+    .map(id => reservations.find(r => r.id === id))
+    .filter(r => r && (isBlockingReservation(r) || ['solicitud', 'pendiente'].includes(normStatus(r.status))))
+    .sort((a, b) => String(getPrimaryDateOfReservation(a) || '').localeCompare(String(getPrimaryDateOfReservation(b) || '')));
+  if (!list.length) { c.innerHTML = '<p class="text-xs text-gray-400 p-3 text-center">Sin reservas en este período.</p>'; return; }
+  const shown = list.slice(0, 120);
+  const extra = list.length - shown.length;
+  c.innerHTML = shown.map(r => {
+    const sps = getSpacesOfReservation(r.id);
+    const allDates = [...new Set(sps.map(x => x.date))].sort();
+    const range = allDates.length > 1 ? `${allDates[0]} → ${allDates[allDates.length - 1]}` : (allDates[0] || r.date || '-');
+    const first = sps[0];
+    const t = first ? getTurnById(first.turnId) : null;
+    const hours = first ? `${first.customStart || t?.startTime || ''}–${first.customEnd || t?.endTime || ''}` : '';
+    const zones = [...new Set(sps.map(x => getSpaceById(x.spaceId)?.shortName || x.spaceId))].join(', ') || (r.eventType || '-');
+    const col = getSpaceById(sps[0]?.spaceId)?.color || '#6b7280';
+    return `<div class="p-3 rounded-2xl border border-gray-200 bg-gray-50/60 text-sm">
+      <div class="flex items-center justify-between gap-2">
+        <b class="truncate"><span class="inline-block w-2.5 h-2.5 rounded-full mr-1.5" style="background:${col}"></span>${escAttr(r.clientName)}</b>
+        ${statusBadge(r.status)}
+      </div>
+      <div class="text-xs text-gray-500 mt-1">${range}${hours ? ` · ${hours}` : ''}</div>
+      <div class="text-xs text-gray-500">${escAttr(zones)}</div>
+      <div class="flex gap-1.5 mt-2">
+        <button onclick="openReservationDetail('${r.id}')" class="px-2.5 py-1 rounded-lg bg-white border text-xs font-bold">Ver</button>
+        <button onclick="deleteReservation('${r.id}')" class="px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-bold">Eliminar</button>
+      </div></div>`;
+  }).join('') + (extra > 0 ? `<p class="text-xs text-gray-400 p-2 text-center">+${extra} más en el período (achicá con los filtros de Reservas).</p>` : '');
+}
+
+/* "Hoy" contextual: en Más detalles se oculta si hoy está visible */
+function updateTodayBtn() {
+  const btn = document.getElementById('cal-today-btn');
+  if (!btn) return;
+  if (detailMode !== 'mas') { btn.classList.remove('hidden'); return; }
+  const t = getTodayStr();
+  const visible = advMode === 'year'
+    ? currentCalendarDate.getFullYear() === new Date().getFullYear()
+    : (advMode === 'week' ? advWinDays().includes(t) : advVisibleDates().includes(t));
+  btn.classList.toggle('hidden', visible);
+}
+
+/* ---------------- SINCRONIZACIÓN EN VIVO ---------------- */
+function readLiveBookings() {
+  try {
+    const raw = localStorage.getItem(LIVE_KEY);
+    if (!raw) return [];
+    const map = JSON.parse(raw);
+    const now = Date.now();
+    return Object.values(map).filter(b => b && (now - (b.updatedAt || 0)) < LIVE_TTL_MS);
+  } catch (e) { return []; }
+}
+function renderLivePanel() {
+  const panel = document.getElementById('cal-live-panel');
+  const dot = document.getElementById('live-dot');
+  if (!panel) return;
+  const live = readLiveBookings();
+  if (dot) dot.classList.toggle('hidden', !live.length);
+  if (!live.length) {
+    panel.innerHTML = '<p class="text-xs text-gray-400">Sin actividad ahora mismo.</p>';
+    return;
+  }
+  panel.innerHTML = live.map(b => {
+    // Precio con el MISMO motor de la administración (única fuente)
+    let price = null;
+    try {
+      const dates = [];
+      if (b.date) {
+        if (b.endDate && b.endDate > b.date) {
+          let cur = b.date, guard = 0;
+          while (cur <= b.endDate && guard < 30) { dates.push(cur); if (cur === b.endDate) break; cur = bookingAddDaysClient(cur); guard++; }
+        } else dates.push(b.date);
+      }
+      if (b.spaceIds?.length && b.turnId && dates.length) {
+        price = quoteTotal({ spaceIds: b.spaceIds, turnId: b.turnId, dates, guests: b.guests || 30, serviceIds: b.serviceIds || [], discount: b.discount || 0, customStart: b.customStart || null, customEnd: b.customEnd || null });
+      }
+    } catch (e) { price = null; }
+    const pct = Math.min(100, Math.max(0, b.percent || 0));
+    const spNames = (b.spaceIds || []).map(s => getSpaceById(s)?.shortName || s).join(' + ') || '—';
+    return `<div class="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200">
+      <div class="flex items-center justify-between gap-2">
+        <b class="text-xs text-forest-900 truncate">${escAttr(b.name || 'Cliente en la web')} <span class="text-emerald-600">● en vivo</span></b>
+        <span class="text-xs font-extrabold text-forest-900">${pct}%</span>
+      </div>
+      <div class="live-bar mt-1.5 mb-1.5"><span style="width:${pct}%"></span></div>
+      <div class="text-[0.68rem] text-gray-600">Paso ${b.step || '?'} de 7 · ${escAttr(spNames)}${b.date ? ` · ${b.date}` : ''}</div>
+      <div class="text-xs font-extrabold text-forest-900 mt-0.5">Importe actual: ${price == null ? '—' : formatGs(price)}</div>
+    </div>`;
+  }).join('');
+}
+function notifyDataChanged() {
+  try {
+    if (__bc) __bc.postMessage({ type: 'quinta-changed', at: Date.now() });
+    else localStorage.setItem('quinta_sync_ping', String(Date.now()));
+  } catch (e) { /* sin soporte: el polling por storage igual aplica */ }
+}
+function initLiveSync() {
+  try {
+    if ('BroadcastChannel' in window) {
+      __bc = new BroadcastChannel('quinta_live');
+      __bc.onmessage = (ev) => {
+        if (ev?.data?.type === 'quinta-changed') {
+          clearTimeout(__renderT);
+          __renderT = setTimeout(renderDashboard, 600);
+        }
+      };
+    }
+  } catch (e) { __bc = null; }
+  window.addEventListener('storage', (e) => {
+    if (!e.key || !e.key.startsWith('quinta_')) return;
+    clearTimeout(__renderT);
+    if (e.key === LIVE_KEY) {
+      // Progreso en vivo: solo refrescar el panel (liviano, sin re-render total)
+      __renderT = setTimeout(() => { renderLivePanel(); }, 300);
+    } else {
+      __renderT = setTimeout(renderDashboard, 800);
+    }
+  });
+  // Refrescar presencia en vivo cada 30s (expira sola por TTL)
+  setInterval(() => { renderLivePanel(); }, 30000);
+}
+
 // updateReservationStatus extendido (mantiene firma legacy)
 function updateReservationStatus(id, newStatus){
   const r=reservations.find(x=>x.id===id);if(!r)return;
   const old=normStatus(r.status); const nx=normStatus(newStatus);
+  // REGLA: la reserva web del cliente solo se confirma con un pago registrado
+  if(nx==='confirmada'&&r.source==='reserva-web'&&(r.paidAmount||0)<=0){
+    showToast('Esta solicitud es del cliente web: se confirma sola al registrar la seña o el pago.','error');
+    closeGenericModal?.(); openPaymentModal(id); return;
+  }
   // validar conflictos al confirmar
   if(nx==='confirmada'){
     const sps=getSpacesOfReservation(id);
-    for(const sp of sps){ const chk=checkAvailability(sp.spaceId,sp.date,sp.turnId,id); if(!chk.available){ showToast('No se puede confirmar: '+getSpaceById(sp.spaceId)?.shortName+' ocupado','error'); return; } }
+    for(const sp of sps){ const chk=checkAvailability(sp.spaceId,sp.date,sp.turnId,id,sp.customStart,sp.customEnd); if(!chk.available){ showToast('No se puede confirmar: '+getSpaceById(sp.spaceId)?.shortName+' ocupado','error'); return; } }
   }
   r.status=newStatus; r.updatedAt=nowISO();
   recalcReservationTotals(id);
   saveJSON(STORAGE_KEYS.RESERVATIONS,reservations);
   logAudit('update','reservation',id,{from:old,to:nx}, nx==='cancelada'?'warning':'info');
   // liberar = nada que borrar; el estado inactivo ya excluye de disponibilidad
-  renderDashboard();
+  renderDashboard(); notifyDataChanged();
   showToast(nx==='confirmada'?`Confirmada · ${r.clientName}`:nx==='cancelada'?'Reserva cancelada. Espacios liberados.':`Estado → ${STATUS_META[nx]?.l||nx}`,'success');
 }
 

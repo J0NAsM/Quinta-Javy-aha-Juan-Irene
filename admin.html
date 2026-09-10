@@ -201,6 +201,10 @@
         <i class="fa-solid fa-chart-bar text-blue-600"></i>
         <span>Rentabilidad</span>
       </button>
+      <button id="nav-btn-surveys" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="surveys">
+        <i class="fa-solid fa-star text-amber-500"></i>
+        <span>Encuestas</span>
+      </button>
       <button id="nav-btn-users" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="users">
         <i class="fa-solid fa-users-cog text-indigo-600"></i>
         <span>Usuarios</span>
@@ -231,7 +235,17 @@
 
         <!-- Navigation Buttons -->
         <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-          <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1" role="tablist" aria-label="Vista de calendario">
+          <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1" role="tablist" aria-label="Nivel de detalle">
+            <button class="cal-detail-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-forest-800 text-white shadow transition" data-detail="menos">Menos detalles</button>
+            <button class="cal-detail-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-detail="mas">Más detalles</button>
+          </div>
+          <div id="cal-adv-modes" class="hidden items-center gap-1 bg-gray-100 rounded-xl p-1" role="tablist" aria-label="Modo de calendario">
+            <button class="cal-adv-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-mode="day">Día</button>
+            <button class="cal-adv-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-forest-800 text-white shadow transition" data-mode="week">Semana</button>
+            <button class="cal-adv-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-mode="month">Mes</button>
+            <button class="cal-adv-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-mode="year">Año</button>
+          </div>
+          <div id="cal-legacy-views" class="flex items-center gap-1 bg-gray-100 rounded-xl p-1" role="tablist" aria-label="Vista de calendario">
             <button class="cal-view-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-forest-800 text-white shadow transition" data-view="month">Mes</button>
             <button class="cal-view-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-view="week">Semana</button>
             <button class="cal-view-btn px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-white transition" data-view="day">Día</button>
@@ -298,6 +312,29 @@
       <!-- Vista día: matriz espacios x turnos -->
       <div id="cal-day-grid" class="hidden mt-4 space-y-3">
         <!-- Renderizado dinámico -->
+      </div>
+
+      <!-- Vista avanzada "Más detalles": grid horario + lista lateral -->
+      <div id="cal-adv-wrap" class="hidden mt-4">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div class="xl:col-span-2 adv-scroll rounded-2xl border border-gray-200">
+            <div id="cal-adv-grid"><!-- Renderizado dinámico --></div>
+          </div>
+          <aside class="space-y-4">
+            <div class="rounded-2xl border border-gray-200 p-4">
+              <h4 class="font-bold text-sm text-forest-900 mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-bolt text-amber-500"></i> En vivo
+                <span id="live-dot" class="hidden w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+              </h4>
+              <p class="text-[0.7rem] text-gray-400 mb-3">Clientes creando una reserva ahora mismo (no bloquean fecha).</p>
+              <div id="cal-live-panel" class="space-y-2"></div>
+            </div>
+            <div class="rounded-2xl border border-gray-200 p-4">
+              <h4 class="font-bold text-sm text-forest-900 mb-3">Reservas del período <span id="side-range-label" class="text-gray-400 font-medium"></span></h4>
+              <div id="cal-side-list" class="space-y-2 max-h-[520px] overflow-y-auto"></div>
+            </div>
+          </aside>
+        </div>
       </div>
 
     </section>
@@ -633,9 +670,6 @@
           <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Espacios Alquilables</h3>
           <p class="text-xs sm:text-sm text-gray-500">Configura los espacios que pueden alquilarse de forma independiente o combinada</p>
         </div>
-        <button id="btn-add-space" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
-          <i class="fa-solid fa-plus"></i> <span>Nuevo Espacio</span>
-        </button>
       </div>
       <div id="spaces-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
     </section>
@@ -663,9 +697,15 @@
           <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Motor de Precios</h3>
           <p class="text-xs sm:text-sm text-gray-500">Reglas flexibles por espacio, turno, día, temporada, fecha y duración</p>
         </div>
-        <button id="btn-add-pricing-rule" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
-          <i class="fa-solid fa-plus"></i> <span>Nueva Regla</span>
-        </button>
+        <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button id="btn-manage-holidays" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-100 transition w-full sm:w-auto">
+            <i class="fa-solid fa-umbrella-beach text-rose-500"></i> <span>Feriados</span>
+            <span id="holidays-count-badge" class="hidden px-2 py-0.5 rounded-full text-[0.65rem] bg-rose-100 text-rose-700 font-extrabold">0</span>
+          </button>
+          <button id="btn-add-pricing-rule" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+            <i class="fa-solid fa-plus"></i> <span>Nueva Regla</span>
+          </button>
+        </div>
       </div>
       <div id="pricing-rules-list" class="space-y-3"></div>
     </section>
@@ -823,6 +863,19 @@
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4" id="profitability-cards"></div>
     </section>
 
+    <!-- ENCUESTAS DE SATISFACCIÓN -->
+    <section id="section-surveys" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-star text-amber-500"></i> Satisfacción del Cliente</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Encuestas Post-Evento</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Respuestas del formulario <b>#encuesta</b> del sitio público. Compartilo por WhatsApp a clientes que ya realizaron su evento.</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4" id="surveys-kpis"></div>
+      <div id="surveys-list" class="overflow-x-auto"></div>
+    </section>
+
     <!-- USUARIOS -->
     <section id="section-users" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
@@ -959,6 +1012,88 @@
               <div class="flex items-center gap-3">
                 <input type="checkbox" id="setting-maintenance" class="rounded text-forest-800 focus:ring-forest-800 w-4 h-4">
                 <label for="setting-maintenance" class="text-sm text-gray-700">Modo mantenimiento (oculta formulario web)</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-money-bill-wave text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Seña del Cliente</h4>
+            </div>
+            <div class="space-y-4 text-sm">
+              <div class="flex items-center gap-3">
+                <input type="checkbox" id="setting-deposit-active" class="rounded text-forest-800 focus:ring-forest-800 w-4 h-4">
+                <label for="setting-deposit-active" class="text-sm text-gray-700">Ofrecer pago de seña en la web</label>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label for="setting-deposit-mode" class="block text-xs font-bold text-gray-700 mb-1">Tipo</label>
+                  <select id="setting-deposit-mode" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                    <option value="percent">Porcentaje del total</option>
+                    <option value="fixed">Monto fijo</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="setting-deposit-value" class="block text-xs font-bold text-gray-700 mb-1">% o monto (Gs.)</label>
+                  <input type="number" id="setting-deposit-value" min="0" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label for="setting-deposit-bank" class="block text-xs font-bold text-gray-700 mb-1">Banco</label>
+                  <input type="text" id="setting-deposit-bank" placeholder="Ej: Banco Familiar" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                </div>
+                <div>
+                  <label for="setting-deposit-holder" class="block text-xs font-bold text-gray-700 mb-1">Titular</label>
+                  <input type="text" id="setting-deposit-holder" placeholder="Ej: Juan Pérez" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label for="setting-deposit-account" class="block text-xs font-bold text-gray-700 mb-1">N° de cuenta</label>
+                  <input type="text" id="setting-deposit-account" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                </div>
+                <div>
+                  <label for="setting-deposit-alias" class="block text-xs font-bold text-gray-700 mb-1">Alias</label>
+                  <input type="text" id="setting-deposit-alias" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                </div>
+              </div>
+              <div>
+                <label for="setting-deposit-instructions" class="block text-xs font-bold text-gray-700 mb-1">Instrucciones para el cliente</label>
+                <textarea id="setting-deposit-instructions" rows="2" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4 lg:col-span-2">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-file-contract text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Reglamento y Términos de Uso</h4>
+            </div>
+            <p class="text-xs text-gray-500">Texto que acepta el cliente al final de la solicitud web. Cada aceptación queda asociada a la reserva con su versión. Cambios aquí aplican a futuras solicitudes.</p>
+            <div class="space-y-4 text-sm">
+              <div class="flex items-center gap-3">
+                <input type="checkbox" id="setting-terms-active" class="rounded text-forest-800 focus:ring-forest-800 w-4 h-4">
+                <label for="setting-terms-active" class="text-sm text-gray-700">Exigir aceptación en la solicitud web</label>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="sm:col-span-2">
+                  <label for="setting-terms-title" class="block text-xs font-bold text-gray-700 mb-1">Título</label>
+                  <input type="text" id="setting-terms-title" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                </div>
+                <div>
+                  <label for="setting-terms-version" class="block text-xs font-bold text-gray-700 mb-1">Versión</label>
+                  <input type="text" id="setting-terms-version" placeholder="v1.0" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+                </div>
+              </div>
+              <div>
+                <label for="setting-terms-checkbox" class="block text-xs font-bold text-gray-700 mb-1">Texto de la casilla de aceptación</label>
+                <input type="text" id="setting-terms-checkbox" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div>
+                <label for="setting-terms-body" class="block text-xs font-bold text-gray-700 mb-1">Contenido (se admite # títulos, **negrita**, * listas, --- separadores)</label>
+                <textarea id="setting-terms-body" rows="12" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
               </div>
             </div>
           </div>

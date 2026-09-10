@@ -149,10 +149,12 @@
           { "@type": "ListItem", "position": 2, "name": "Instalaciones", "item": "https://www.quintajavyaha.com.py/#instalaciones" },
           { "@type": "ListItem", "position": 3, "name": "Eventos", "item": "https://www.quintajavyaha.com.py/#paquetes" },
           { "@type": "ListItem", "position": 4, "name": "Cotizador", "item": "https://www.quintajavyaha.com.py/#cotizador" },
-          { "@type": "ListItem", "position": 5, "name": "Galería", "item": "https://www.quintajavyaha.com.py/#galeria" },
-          { "@type": "ListItem", "position": 6, "name": "Ubicación", "item": "https://www.quintajavyaha.com.py/#ubicacion" },
-          { "@type": "ListItem", "position": 7, "name": "Preguntas Frecuentes", "item": "https://www.quintajavyaha.com.py/#preguntas" },
-          { "@type": "ListItem", "position": 8, "name": "Contacto", "item": "https://www.quintajavyaha.com.py/#contacto" }
+          { "@type": "ListItem", "position": 5, "name": "Reservar Fecha", "item": "https://www.quintajavyaha.com.py/#reserva" },
+          { "@type": "ListItem", "position": 6, "name": "Galería", "item": "https://www.quintajavyaha.com.py/#galeria" },
+          { "@type": "ListItem", "position": 7, "name": "Ubicación", "item": "https://www.quintajavyaha.com.py/#ubicacion" },
+          { "@type": "ListItem", "position": 8, "name": "Encuesta de Satisfacción", "item": "https://www.quintajavyaha.com.py/#encuesta" },
+          { "@type": "ListItem", "position": 9, "name": "Preguntas Frecuentes", "item": "https://www.quintajavyaha.com.py/#preguntas" },
+          { "@type": "ListItem", "position": 10, "name": "Contacto", "item": "https://www.quintajavyaha.com.py/#contacto" }
         ]
       },
       {
@@ -247,6 +249,7 @@
         <a href="#cotizador" class="hover:text-forest-700 transition flex items-center gap-1.5 text-forest-800">
           <span class="w-2 h-2 rounded-full bg-gold-500"></span> Cotizador
         </a>
+        <a href="#reserva" class="hover:text-forest-700 transition">Reservar</a>
         <a href="#galeria" class="hover:text-forest-700 transition">Galería</a>
         <a href="#ubicacion" class="hover:text-forest-700 transition">Ubicación</a>
         <a href="#preguntas" class="hover:text-forest-700 transition">Preguntas</a>
@@ -288,6 +291,9 @@
       <a href="#paquetes" class="mobile-nav-link hover:text-forest-800 py-1">Eventos y Paquetes</a>
       <a href="#cotizador" class="mobile-nav-link text-forest-800 font-bold py-1 flex items-center gap-2">
         <i class="fa-solid fa-calculator text-gold-500"></i> Cotizador Online
+      </a>
+      <a href="#reserva" class="mobile-nav-link text-forest-800 font-bold py-1 flex items-center gap-2">
+        <i class="fa-solid fa-calendar-check text-gold-500"></i> Reservar Fecha
       </a>
       <a href="#galeria" class="mobile-nav-link hover:text-forest-800 py-1">Galería de Fotos</a>
       <a href="#ubicacion" class="mobile-nav-link hover:text-forest-800 py-1">Ubicación y Mapa</a>
@@ -834,6 +840,161 @@
   </section>
 
   <!-- ========================================================================
+       SECTION: RESERVA DIRECTA (SOLICITUD DEL CLIENTE)
+       ======================================================================== -->
+  <section id="reserva" class="py-16 sm:py-24 bg-[#f3f4f1] border-y border-gray-200">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center max-w-2xl mx-auto mb-10">
+        <span class="badge-tag uppercase tracking-widest">
+          <i class="fa-solid fa-calendar-check text-gold-600"></i> Reserva directa
+        </span>
+        <h2 class="font-serif text-3xl sm:text-4xl font-bold text-forest-900 mt-3 mb-3">
+          Agendá tu fecha en 1 minuto
+        </h2>
+        <p class="text-gray-600 text-sm sm:text-base">
+          Completá tus datos y elegí espacio, fecha y horario. Tu solicitud queda <strong>pendiente</strong>: la fecha se bloquea recién cuando registrás la seña o el pago. Te contactaremos por WhatsApp para coordinar.
+        </p>
+      </div>
+
+      <form id="booking-form" class="quote-card p-6 sm:p-10 space-y-6" novalidate>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="booking-name" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Nombre y apellido *</label>
+            <input type="text" id="booking-name" required autocomplete="name" placeholder="Ej: Patricia Benítez" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+          <div>
+            <label for="booking-phone" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Teléfono / WhatsApp *</label>
+            <input type="tel" id="booking-phone" required autocomplete="tel" placeholder="Ej: 0981 123456" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+        </div>
+
+        <div>
+          <span class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2.5">Espacio *</span>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5" id="booking-spaces">
+            <div data-booking-space="piscina" class="option-pill active p-4 rounded-xl text-center">
+              <i class="fa-solid fa-water-ladder text-cyan-600 text-xl mb-1 block"></i>
+              <span class="text-xs font-bold block">Piscina</span>
+            </div>
+            <div data-booking-space="salon" class="option-pill p-4 rounded-xl text-center">
+              <i class="fa-solid fa-building-columns text-cyan-700 text-xl mb-1 block"></i>
+              <span class="text-xs font-bold block">Salón Climatizado</span>
+            </div>
+            <div data-booking-space="ambos" class="option-pill p-4 rounded-xl text-center">
+              <i class="fa-solid fa-star text-amber-500 text-xl mb-1 block"></i>
+              <span class="text-xs font-bold block">Piscina + Salón</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label for="booking-turn" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Horario de referencia *</label>
+          <select id="booking-turn" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></select>
+          <p class="text-[0.68rem] text-gray-400 mt-1">Elegí un horario tipo o ajustá fecha y hora a mano. Los horarios nocturnos terminan al día siguiente.</p>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <label for="booking-date" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Fecha inicio *</label>
+            <input type="date" id="booking-date" required class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+          <div>
+            <label for="booking-time-start" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Hora inicio *</label>
+            <input type="time" id="booking-time-start" required value="10:00" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+          <div>
+            <label for="booking-date-end" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Fecha fin *</label>
+            <input type="date" id="booking-date-end" required class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+          <div>
+            <label for="booking-time-end" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Hora fin *</label>
+            <input type="time" id="booking-time-end" required value="18:00" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+        </div>
+        <p id="booking-range-hint" class="text-xs font-bold text-forest-800"></p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label for="booking-guests" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Invitados (aprox.)</label>
+            <input type="number" id="booking-guests" min="1" max="500" value="30" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+        </div>
+
+        <div>
+          <label for="booking-notes" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Comentarios (opcional)</label>
+          <textarea id="booking-notes" rows="2" placeholder="Tipo de evento, catering, decoración..." class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs sm:text-sm text-amber-900 flex gap-3">
+          <i class="fa-solid fa-circle-info text-amber-600 text-lg mt-0.5"></i>
+          <p><strong>Importante:</strong> tu fecha queda <strong>pendiente</strong> hasta que abones la seña o el pago. Recién entonces la bloqueamos en el calendario para vos. Estimado actual: <strong id="booking-estimate">Gs. —</strong></p>
+        </div>
+
+        <div id="booking-deposit-block" class="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 sm:p-5 space-y-4">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" id="booking-deposit-check" class="mt-1 w-4 h-4 rounded text-forest-800 focus:ring-forest-800">
+            <span class="text-sm text-gray-800"><strong>¿Deseás pagar la seña ahora?</strong> <span class="text-gray-500">(opcional)</span><br>
+            <span class="text-xs text-gray-500">Si no la pagás ahora, tu solicitud queda pendiente igual y coordinamos por WhatsApp.</span></span>
+          </label>
+
+          <div id="booking-deposit-box" class="hidden space-y-4 bg-white rounded-2xl border border-gray-200 p-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
+              <div class="text-sm text-gray-600">Monto de la seña</div>
+              <div id="booking-deposit-amount" class="font-serif text-2xl font-extrabold text-forest-900">Gs. —</div>
+            </div>
+            <div id="booking-deposit-data" class="text-xs sm:text-sm text-gray-600 bg-gray-50 rounded-xl border p-3 space-y-1"></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="booking-deposit-method" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Método de pago *</label>
+                <select id="booking-deposit-method" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></select>
+              </div>
+              <div>
+                <label for="booking-deposit-date" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Fecha del pago *</label>
+                <input type="date" id="booking-deposit-date" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+            </div>
+            <div>
+              <label for="booking-deposit-file" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Comprobante (JPG, PNG o WebP, máx. 900KB) *</label>
+              <input type="file" id="booking-deposit-file" accept="image/jpeg,image/png,image/webp" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              <p id="booking-deposit-error" class="hidden text-xs font-bold text-red-600 mt-1"></p>
+              <div id="booking-deposit-preview" class="hidden mt-3 flex items-start gap-3">
+                <img id="booking-deposit-img" src="" alt="Vista previa del comprobante" class="max-h-40 rounded-xl border">
+                <button type="button" id="booking-deposit-remove" class="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs font-bold">Quitar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="booking-terms-block" class="rounded-2xl border border-gray-200 bg-gray-50/60 p-4 sm:p-5 space-y-3">
+          <h3 id="booking-terms-title" class="font-serif text-lg font-bold text-forest-900">Reglamento y Condiciones de Uso</h3>
+          <div id="booking-terms-body" class="terms-box max-h-64 overflow-y-auto bg-white rounded-xl border border-gray-200 p-4 text-xs sm:text-sm text-gray-600 space-y-2"></div>
+          <label class="flex items-start gap-3 cursor-pointer bg-white rounded-xl border border-gray-200 p-3">
+            <input type="checkbox" id="booking-terms-check" class="mt-1 w-4 h-4 rounded text-forest-800 focus:ring-forest-800">
+            <span id="booking-terms-label" class="text-xs sm:text-sm text-gray-700"></span>
+          </label>
+        </div>
+
+        <button type="submit" class="w-full btn-forest py-4 rounded-xl font-bold text-base shadow-lg flex items-center justify-center gap-2 transition hover:scale-[1.01]">
+          <i class="fa-solid fa-paper-plane"></i>
+          <span>Enviar solicitud de reserva</span>
+        </button>
+        <p id="booking-success" class="hidden text-center text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-4">¡Solicitud recibida! Te contactaremos por WhatsApp para coordinar la seña. Tu fecha aún no está bloqueada.</p>
+      </form>
+
+      <!-- Consulta de solicitud enviada -->
+      <div class="quote-card p-6 sm:p-8 mt-6">
+        <h3 class="font-serif text-xl font-bold text-forest-900 mb-1">¿Ya enviaste una solicitud? Consultá su estado</h3>
+        <p class="text-xs text-gray-500 mb-4">Ingresá el mismo teléfono y la fecha para ver tu reserva y tu seña.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input type="tel" id="lookup-phone" placeholder="Tu teléfono" class="bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          <input type="date" id="lookup-date" class="bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          <button type="button" id="lookup-btn" class="btn-forest py-3 rounded-xl font-bold text-sm">Consultar</button>
+        </div>
+        <div id="lookup-result" class="mt-4 space-y-3"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
        SECTION: GALERÍA DE FOTOS INTERACTIVA (LIGHTBOX)
        ======================================================================== -->
   <section id="galeria" class="py-16 sm:py-24 bg-white border-t border-gray-200">
@@ -1114,6 +1275,81 @@
   </section>
 
   <!-- ========================================================================
+       SECTION: ENCUESTA DE SATISFACCIÓN POST-EVENTO
+       ======================================================================== -->
+  <section id="encuesta" class="py-16 sm:py-24 bg-white border-t border-gray-200">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-10">
+        <span class="badge-tag uppercase tracking-widest">
+          <i class="fa-solid fa-star text-gold-600"></i> Tu opinión nos mejora
+        </span>
+        <h2 class="font-serif text-3xl sm:text-4xl font-bold text-forest-900 mt-3 mb-3">
+          ¿Ya festejaste con nosotros? Contanos cómo te fue
+        </h2>
+        <p class="text-gray-600 text-sm sm:text-base">
+          Calificá del 1 al 5 cada aspecto. Tus respuestas nos ayudan a mejorar día a día.
+        </p>
+      </div>
+
+      <form id="survey-form" class="quote-card p-6 sm:p-10 space-y-5" novalidate>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="survey-name" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Tu nombre *</label>
+            <input type="text" id="survey-name" required autocomplete="name" placeholder="Ej: María Benítez" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+          <div>
+            <label for="survey-date" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Fecha de tu evento *</label>
+            <input type="date" id="survey-date" required class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+          </div>
+        </div>
+
+        <div>
+          <label for="survey-space" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Espacio utilizado</label>
+          <select id="survey-space" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+            <option value="piscina">Piscina</option>
+            <option value="salon">Salón Climatizado</option>
+            <option value="ambos">Piscina + Salón</option>
+          </select>
+        </div>
+
+        <div id="survey-ratings" class="space-y-4">
+          <div data-survey-dim="atencion">
+            <span class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Atención recibida</span>
+            <div class="flex gap-2"></div>
+          </div>
+          <div data-survey-dim="limpieza">
+            <span class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Limpieza del predio</span>
+            <div class="flex gap-2"></div>
+          </div>
+          <div data-survey-dim="instalaciones">
+            <span class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Instalaciones (piscina, salón)</span>
+            <div class="flex gap-2"></div>
+          </div>
+          <div data-survey-dim="calidad_precio">
+            <span class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Relación precio / calidad</span>
+            <div class="flex gap-2"></div>
+          </div>
+          <div data-survey-dim="recomendar">
+            <span class="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">¿Nos recomendarías?</span>
+            <div class="flex gap-2"></div>
+          </div>
+        </div>
+
+        <div>
+          <label for="survey-comment" class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Comentario (opcional)</label>
+          <textarea id="survey-comment" rows="3" placeholder="Contanos qué fue lo mejor y qué podemos mejorar..." class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+        </div>
+
+        <button type="submit" class="w-full btn-gold py-4 rounded-xl font-bold text-base shadow-lg flex items-center justify-center gap-2 transition hover:scale-[1.01]">
+          <i class="fa-solid fa-star"></i>
+          <span>Enviar mi calificación</span>
+        </button>
+        <p id="survey-success" class="hidden text-center text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-4">¡Gracias por tu tiempo! Tu opinión ya nos ayuda a mejorar. 🌿</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ========================================================================
        SECTION: PREGUNTAS FRECUENTES (FAQ)
        ======================================================================== -->
   <section id="preguntas" class="py-16 sm:py-24 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1343,6 +1579,7 @@
             <li><a href="#instalaciones" class="hover:text-gold-400 transition">Nuestras Instalaciones</a></li>
             <li><a href="#paquetes" class="hover:text-gold-400 transition">Eventos & Paquetes</a></li>
             <li><a href="#cotizador" class="hover:text-gold-400 transition">Cotizador Online</a></li>
+            <li><a href="#reserva" class="hover:text-gold-400 transition">Reservar Fecha</a></li>
             <li><a href="#galeria" class="hover:text-gold-400 transition">Galería de Fotos</a></li>
             <li><a href="#ubicacion" class="hover:text-gold-400 transition">Ubicación y Mapa</a></li>
             <li><a href="#preguntas" class="hover:text-gold-400 transition">Preguntas Frecuentes</a></li>
