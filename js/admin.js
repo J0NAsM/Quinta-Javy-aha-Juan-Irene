@@ -24,6 +24,8 @@ const STORAGE_KEYS = {
   RECURRING_EXPENSES: 'quinta_recurring_expenses',
   SURVEYS: 'quinta_surveys',
   DEPOSITS: 'quinta_deposits', // pagos de seña del cliente (con comprobante)
+  CHECKLISTS: 'quinta_checklists', // tareas operativas por reserva
+  PRICE_HISTORY: 'quinta_price_history', // historial de cambios de tarifas
   // System
   USERS: 'quinta_users',
   AUDIT_LOGS: 'quinta_audit_logs',
@@ -49,6 +51,8 @@ let reservationSpaces = [];
 let services = [];
 let surveys = [];
 let deposits = []; // pagos de seña (un registro por reserva + attempts[])
+let checklists = []; // tareas operativas por reserva
+let priceHistory = []; // {at, by, action, detail}
 let payments = [];
 let incomes = [];
 let expenses = [];
@@ -298,6 +302,8 @@ function initStorage() {
   services = loadJSON(STORAGE_KEYS.SERVICES, getDefaultServices());
   surveys = loadJSON(STORAGE_KEYS.SURVEYS, []);
   deposits = normalizeDeposits(loadJSON(STORAGE_KEYS.DEPOSITS, []));
+  checklists = normalizeChecklists(loadJSON(STORAGE_KEYS.CHECKLISTS, []));
+  priceHistory = loadJSON(STORAGE_KEYS.PRICE_HISTORY, []);
   payments = loadJSON(STORAGE_KEYS.PAYMENTS, []);
   incomes = loadJSON(STORAGE_KEYS.INCOMES, []);
   expenses = loadJSON(STORAGE_KEYS.EXPENSES, []);
@@ -344,6 +350,12 @@ function initStorage() {
     saveJSON(STORAGE_KEYS.SETTINGS, settings);
   }
   settings.deposit = normalizeDepositSettings(settings.deposit);
+  const defS = getDefaultSettings();
+  if (!settings.waTemplates || typeof settings.waTemplates !== 'object') settings.waTemplates = Object.assign({}, defS.waTemplates);
+  else settings.waTemplates = Object.assign({}, defS.waTemplates, settings.waTemplates);
+  settings.sessionDays = Math.max(1, parseInt(settings.sessionDays) || 1);
+  settings.rememberDays = Math.max(1, parseInt(settings.rememberDays) || 30);
+  saveJSON(STORAGE_KEYS.SETTINGS, settings);
   if (!settings.terms) settings.terms = getDefaultSettings().terms;
   settings.terms = normalizeTermsSettings(settings.terms);
   if (!settings.terms.body) { // primera vez: sembrar reglamento vigente
@@ -470,6 +482,8 @@ function saveAll() {
   saveJSON(STORAGE_KEYS.SERVICES, services);
   saveJSON(STORAGE_KEYS.SURVEYS, surveys);
   saveJSON(STORAGE_KEYS.DEPOSITS, deposits);
+  saveJSON(STORAGE_KEYS.CHECKLISTS, checklists);
+  saveJSON(STORAGE_KEYS.PRICE_HISTORY, priceHistory);
   saveJSON(STORAGE_KEYS.PAYMENTS, payments);
   saveJSON(STORAGE_KEYS.INCOMES, incomes);
   saveJSON(STORAGE_KEYS.EXPENSES, expenses);
@@ -1034,8 +1048,35 @@ function getDefaultSettings() {
     alertDaysBefore: 3,
     autoConfirmEnabled: false,
     maintenanceMode: false,
-    backupEnabled: true
+    backupEnabled: true,
+    sessionDays: 1,
+    rememberDays: 30,
+    waTemplates: {
+      confirmar: 'Hola {nombre} 🌿 Te confirmamos tu reserva del *{fecha}* en *{negocio}*. ¡Te esperamos!',
+      saldo: 'Hola {nombre} 🌿 Te recordamos que tenés un saldo pendiente de *{saldo}* por tu evento del *{fecha}* en *{negocio}*. ¿Coordinamos el pago?',
+      agradecer: 'Hola {nombre} 🌿 ¡Gracias por festejar con nosotros! Nos ayudaría mucho tu calificación: {link}',
+      verificado: 'Hola {nombre} 🌿 Tu seña de *{monto}* fue *VERIFICADA* y tu reserva del *{fecha}* quedó *CONFIRMADA*. ¡Gracias!',
+      rechazado: 'Hola {nombre} 🌿 Tu comprobante fue *RECHAZADO*. Motivo: {motivo}. Podés reenviarlo desde la web. ¡Gracias!'
+    }
   };
+}
+function normalizeChecklists(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(t => t && typeof t === 'object' && typeof t.id === 'string' && typeof t.reservationId === 'string').map(t => ({
+    id: t.id, reservationId: t.reservationId, title: String(t.title || 'Tarea'),
+    assignee: String(t.assignee || ''), done: !!t.done,
+    doneBy: String(t.doneBy || ''), doneAt: String(t.doneAt || ''),
+    createdAt: String(t.createdAt || ''), createdBy: String(t.createdBy || '')
+  }));
+}
+/* Renderiza una plantilla WhatsApp con variables {nombre} {fecha} {saldo} {monto} {motivo} {negocio} {link} */
+function waRender(key, vars = {}) {
+  const tpl = ((settings.waTemplates || {})[key]) || '';
+  const base = Object.assign({ negocio: settings.companyName || '', link: location.origin + location.pathname.replace(/admin\.html.*$/, 'index.html') }, vars);
+  return tpl.replace(/\{(\w+)\}/g, (_, k) => (base[k] !== undefined ? base[k] : `{${k}}`));
+}
+function waLinkFor(resId, key, vars = {}) {
+  return `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(waRender(key, vars))}`;
 }
 
 // ============================================================================
@@ -1105,7 +1146,7 @@ function handleLogin(e) {
   saveJSON(STORAGE_KEYS.USERS, users);
 
   const expires = new Date();
-  expires.setDate(expires.getDate() + (remember ? 30 : 1));
+  expires.setDate(expires.getDate() + (remember ? (settings.rememberDays || 30) : (settings.sessionDays || 1)));
   sessionStorage.setItem('quinta_admin_session', JSON.stringify({ userId: user.id, expires: expires.toISOString() }));
 
   logAudit('login', 'user', user.id, { email }, 'info');
@@ -1129,12 +1170,16 @@ function showApp() {
           <div class="font-semibold text-gray-900 text-sm">${currentUser.name}</div>
           <div class="text-[0.65rem] text-gray-500 capitalize">${currentUser.role}</div>
         </div>
+        <button id="account-btn" class="p-2 text-gray-400 hover:text-gold-400 transition rounded-lg" title="Mi cuenta">
+          <i class="fa-solid fa-user-gear"></i>
+        </button>
         <button id="logout-btn" class="p-2 text-gray-400 hover:text-red-600 transition rounded-lg" title="Cerrar sesión">
           <i class="fa-solid fa-arrow-right-from-bracket"></i>
         </button>
       </div>
     `;
     document.getElementById('logout-btn').addEventListener('click', handleLogout);
+    document.getElementById('account-btn').addEventListener('click', () => { if (typeof openAccountModal === 'function') openAccountModal(); });
   }
 
   // Mostrar/ocultar tabs según permisos
@@ -1157,8 +1202,10 @@ function hasPermission(permission) {
 
 function updateTabsVisibility() {
   const tabMap = {
+    'today': 'reservations.read',
     'calendar': 'reservations.read',
     'reservations': 'reservations.read',
+    'clients': 'reservations.read',
     'spaces': 'spaces.crud',
     'turns': 'turns.crud',
     'pricing-rules': 'pricing.crud',
@@ -1224,6 +1271,10 @@ function bootApp() {
   if (typeof initSettingsManagement === 'function') initSettingsManagement();
   if (typeof initWizard === 'function') initWizard();
   if (typeof initAdvCalendar === 'function') initAdvCalendar();
+  if (typeof initToday === 'function') initToday();
+  if (typeof initClients === 'function') initClients();
+  if (typeof initGlobalSearch === 'function') initGlobalSearch();
+  if (typeof initClientEvents === 'function') initClientEvents();
   const legacyPricing = document.getElementById('section-pricing');
   if (legacyPricing) legacyPricing.classList.add('hidden');
   renderDashboard();
@@ -1267,6 +1318,8 @@ function renderDashboard() {
   renderCalendar();
   renderDetailLayer();
   renderReservationsTable();
+  if (typeof renderToday === 'function') renderToday();
+  if (typeof renderClients === 'function') renderClients();
   if (typeof renderSpaces === 'function') renderSpaces();
   if (typeof renderTurns === 'function') renderTurns();
   if (typeof renderServices === 'function') renderServices();
@@ -1278,7 +1331,7 @@ function renderDashboard() {
   if (typeof renderSurveys === 'function') renderSurveys();
   if (typeof renderUsers === 'function') renderUsers();
   if (typeof renderAudit === 'function') renderAudit();
-  if (typeof renderSettings === 'function') renderSettings();
+  if (typeof renderSettings === 'function') { renderSettings(); renderStorageMeter(); }
   if (typeof renderAlerts === 'function') renderAlerts();
   if (typeof updateRecurringBadge === 'function') updateRecurringBadge();
   if (typeof updateHolidaysBadge === 'function') updateHolidaysBadge();
@@ -2237,6 +2290,7 @@ function initPricingSettings() {
     btnSave.addEventListener('click', () => {
       const newConfig = readInputs();
       localStorage.setItem(STORAGE_KEY_PRICING, JSON.stringify(newConfig));
+      logPriceHistory('tarifas base guardadas', 'config legacy');
       showToast('¡Tarifas guardadas exitosamente! El cotizador web ya refleja los nuevos precios.', 'success');
     });
   }
@@ -2345,8 +2399,12 @@ function checkMultiAvailability(spaceIds, date, turnId, excludeReservationId = n
    Si hay varios el mismo día, se aplica el mayor. */
 function getHolidaySurcharge(dateStr) {
   let best = null;
+  const mmdd = String(dateStr || '').slice(5);
   (holidays || []).forEach(h => {
-    if (h.active === false || h.date !== dateStr) return;
+    if (h.active === false) return;
+    const matchExact = h.date === dateStr;
+    const matchYearly = !!h.repeatYearly && String(h.date || '').slice(5) === mmdd;
+    if (!matchExact && !matchYearly) return;
     if (!best || (h.surcharge || 0) > (best.surcharge || 0)) best = h;
   });
   return best;
@@ -2690,6 +2748,49 @@ function deleteService(id) { if(!confirm('¿Eliminar servicio?'))return; service
 function initPricingRulesManagement() {
   document.getElementById('btn-add-pricing-rule')?.addEventListener('click', () => openPricingRuleModal());
   document.getElementById('btn-manage-holidays')?.addEventListener('click', () => openHolidayManager());
+  document.getElementById('btn-price-history')?.addEventListener('click', () => openPriceHistory());
+}
+function logPriceHistory(action, detail) {
+  priceHistory.unshift({ at: nowISO(), by: currentUser?.name || currentUser?.id || '?', action, detail: detail || '' });
+  if (priceHistory.length > 200) priceHistory.length = 200;
+  saveJSON(STORAGE_KEYS.PRICE_HISTORY, priceHistory);
+}
+function monthRevenueEstimate(yearMonth, pctAdjust = 0) {
+  // Recalcula lo recaudado por reservas del mes aplicando un ajuste % a cada total
+  const f = 1 + (pctAdjust / 100);
+  let base = 0;
+  reservations.forEach(r => {
+    const d = getPrimaryDateOfReservation(r) || r.date || '';
+    if (!d.startsWith(yearMonth)) return;
+    if (['cancelada'].includes(normStatus(r.status))) return;
+    base += resAmount(r);
+  });
+  return { base, sim: Math.round(base * f) };
+}
+function openPriceHistory() {
+  const months = [...new Set(reservations.map(r => String(getPrimaryDateOfReservation(r) || r.date || '').slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))].sort().reverse().slice(0, 12);
+  const defMonth = months[0] || getTodayStr().slice(0, 7);
+  openGenericModal({
+    title: 'Historial y simulador', subtitle: 'Cambios de tarifas',
+    bodyHtml: `<div class="space-y-2 max-h-52 overflow-y-auto">` + (priceHistory.length ? priceHistory.slice(0, 30).map(h => `
+      <div class="text-xs p-2 bg-gray-50 rounded-lg border"><b>${new Date(h.at).toLocaleString('es-PY')}</b> · ${h.by} · <b>${h.action}</b><br><span class="text-gray-500">${h.detail || ''}</span></div>`).join('') : '<p class="text-xs text-gray-400">Sin cambios registrados todavía.</p>') + `</div>
+      <div class="pt-3 border-t space-y-2">
+        <b class="text-sm">Simulador: ¿cuánto habría dado un mes con otras tarifas?</b>
+        <div class="grid grid-cols-2 gap-2">
+          <div>${lbl('Mes')}<select id="sim-month" class="${inputCls()}">${months.map(m => `<option ${m === defMonth ? 'selected' : ''}>${m}</option>`).join('') || `<option>${defMonth}</option>`}</select></div>
+          <div>${lbl('Ajuste % (+/-)')}<input id="sim-pct" type="number" value="10" class="${inputCls()}"></div>
+        </div>
+        <div id="sim-result" class="text-sm bg-gray-50 rounded-xl border p-3">Elegí mes y ajuste.</div>
+        <button type="button" id="sim-run" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold w-full">Simular</button>
+      </div>`,
+    submitLabel: 'Cerrar', onSubmit: () => closeGenericModal()
+  });
+  document.getElementById('sim-run')?.addEventListener('click', () => {
+    const m = document.getElementById('sim-month')?.value;
+    const p = parseFloat(document.getElementById('sim-pct')?.value) || 0;
+    const r = monthRevenueEstimate(m, p);
+    document.getElementById('sim-result').innerHTML = `Mes <b>${m}</b>: real <b>${formatGs(r.base)}</b> → con ${p > 0 ? '+' : ''}${p}%: <b class="text-emerald-700">${formatGs(r.sim)}</b> (dif. ${formatGs(r.sim - r.base)})`;
+  });
 }
 function updateHolidaysBadge() {
   const b = document.getElementById('holidays-count-badge');
@@ -2706,7 +2807,7 @@ function openHolidayManager() {
     title: 'Días feriados', subtitle: 'Recargo especial por fecha',
     bodyHtml: `<div class="space-y-2 max-h-[46vh] overflow-y-auto">` + (list.length ? list.map(h => `
       <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl border ${h.active === false ? 'opacity-60 bg-gray-50' : 'bg-white'} ${h.date < today ? 'border-dashed' : ''}">
-        <span class="text-sm"><b>${h.date}</b> · ${h.name || 'Feriado'}<br><span class="text-xs ${h.date < today ? 'text-gray-400' : 'text-rose-700 font-bold'}">+${formatGs(h.surcharge || 0)} por espacio${h.date < today ? ' · pasado' : ''}${h.active === false ? ' · pausado' : ''}</span></span>
+        <span class="text-sm"><b>${h.date}</b> · ${h.name || 'Feriado'}<br><span class="text-xs ${h.date < today && !h.repeatYearly ? 'text-gray-400' : 'text-rose-700 font-bold'}">+${formatGs(h.surcharge || 0)} por espacio${h.repeatYearly ? ' · 🔁 anual' : ''}${h.date < today && !h.repeatYearly ? ' · pasado' : ''}${h.active === false ? ' · pausado' : ''}</span></span>
         <span class="flex gap-1">
           <button type="button" onclick="openHolidayModal('${h.id}')" class="px-2.5 py-1 rounded-lg bg-gray-100 text-xs font-bold">Editar</button>
           <button type="button" onclick="toggleHoliday('${h.id}')" class="px-2.5 py-1 rounded-lg bg-gray-100 text-xs font-bold">${h.active === false ? 'Activar' : 'Pausar'}</button>
@@ -2726,14 +2827,17 @@ function openHolidayModal(id = null) {
     bodyHtml: `${lbl('Fecha *')}<input name="date" type="date" required value="${h.date || ''}" class="${inputCls()}">
     ${lbl('Nombre *')}<input name="name" required value="${h.name || ''}" placeholder="Ej: Navidad" class="${inputCls()}">
     ${lbl('Recargo por espacio (Gs)')}<input name="surcharge" type="number" step="1000" min="0" value="${h.surcharge || 0}" class="${inputCls()}">
-    <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="active" ${h.active !== false ? 'checked' : ''}> Activo</label>`,
+    <div class="flex flex-wrap items-center gap-4">
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="active" ${h.active !== false ? 'checked' : ''}> Activo</label>
+      <label class="flex items-center gap-2 text-sm" title="Aplica todos los años en el mismo día/mes"><input type="checkbox" name="repeatYearly" ${h.repeatYearly ? 'checked' : ''}> Repetir cada año 🔁</label>
+    </div>`,
     onSubmit: (d, form) => {
       if (!d.date) return showToast('Elegí la fecha', 'error');
-      const payload = { date: d.date, name: d.name.trim() || 'Feriado', surcharge: parseInt(d.surcharge) || 0, active: !!form.querySelector('[name="active"]').checked };
-      if (id) { Object.assign(holidays.find(x => x.id === id), payload); logAudit('update', 'holiday', id, payload, 'info'); }
+      const payload = { date: d.date, name: d.name.trim() || 'Feriado', surcharge: parseInt(d.surcharge) || 0, repeatYearly: !!form.querySelector('[name="repeatYearly"]')?.checked, active: !!form.querySelector('[name="active"]').checked };
+      if (id) { Object.assign(holidays.find(x => x.id === id), payload); logAudit('update', 'holiday', id, payload, 'info'); logPriceHistory('feriado editado', `${payload.date} ${payload.name || ''}`); }
       else {
         if (holidays.some(x => x.date === payload.date && x.active !== false)) return showToast('Ya hay un feriado activo esa fecha. Editalo.', 'error');
-        const nh = { id: generateId('hol'), ...payload }; holidays.push(nh); logAudit('create', 'holiday', nh.id, payload, 'info');
+        const nh = { id: generateId('hol'), ...payload }; holidays.push(nh); logAudit('create', 'holiday', nh.id, payload, 'info'); logPriceHistory('feriado creado', `${payload.date} ${payload.name || ''}`);
       }
       saveJSON(STORAGE_KEYS.HOLIDAYS, holidays);
       updateHolidaysBadge(); openHolidayManager(); showToast('Feriado guardado', 'success');
@@ -2834,14 +2938,14 @@ function openPricingRuleModal(id = null) {
         surcharges: [...((parseInt(d.surch)||0)?[{type:'fixed',fixed:parseInt(d.surch)}]:[]), ...((parseFloat(d.surchp)||0)?[{type:'percent',percent:parseFloat(d.surchp)}]:[])],
         active: !!form.querySelector('[name="active"]').checked, updatedAt: nowISO()
       };
-      if (id) { Object.assign(pricingRules.find(x=>x.id===id), payload); logAudit('update','pricing_rule',id,payload,'info'); }
-      else { const nr = { id: generateId('rule'), ...payload, createdAt: nowISO(), createdBy: currentUser?.id }; pricingRules.push(nr); logAudit('create','pricing_rule',nr.id,payload,'info'); }
+      if (id) { Object.assign(pricingRules.find(x=>x.id===id), payload); logAudit('update','pricing_rule',id,payload,'info'); logPriceHistory('regla editada', payload.name || id); }
+      else { const nr = { id: generateId('rule'), ...payload, createdAt: nowISO(), createdBy: currentUser?.id }; pricingRules.push(nr); logAudit('create','pricing_rule',nr.id,payload,'info'); logPriceHistory('regla creada', payload.name || nr.id); }
       saveJSON(STORAGE_KEYS.PRICING_RULES, pricingRules); closeGenericModal(); renderPricingRules(); showToast('Regla guardada','success');
     }
   });
 }
-function togglePricingRule(id){ const r=pricingRules.find(x=>x.id===id); r.active = r.active===false?true:false; saveJSON(STORAGE_KEYS.PRICING_RULES,pricingRules); renderPricingRules(); }
-function deletePricingRule(id){ if(!confirm('¿Eliminar regla?'))return; pricingRules=pricingRules.filter(x=>x.id!==id); saveJSON(STORAGE_KEYS.PRICING_RULES,pricingRules); renderPricingRules(); logAudit('delete','pricing_rule',id,{},'warning'); }
+function togglePricingRule(id){ const r=pricingRules.find(x=>x.id===id); r.active = r.active===false?true:false; saveJSON(STORAGE_KEYS.PRICING_RULES,pricingRules); renderPricingRules(); logPriceHistory(r.active===false?'regla pausada':'regla activada', r.name||id); }
+function deletePricingRule(id){ if(!confirm('¿Eliminar regla?'))return; const r=pricingRules.find(x=>x.id===id); pricingRules=pricingRules.filter(x=>x.id!==id); saveJSON(STORAGE_KEYS.PRICING_RULES,pricingRules); renderPricingRules(); logAudit('delete','pricing_rule',id,{},'warning'); logPriceHistory('regla eliminada', (r&&r.name)||id); }
 
 /* ---------------- FINANZAS: ingresos / egresos / dashboard ---------------- */
 let financeCharts = {};
@@ -2863,6 +2967,9 @@ function monthLabel(ym){ const [y,m]=ym.split('-').map(Number); const names=['En
 function initFinancesManagement() {
   document.getElementById('finance-period')?.addEventListener('change', renderFinances);
   document.getElementById('btn-export-finances')?.addEventListener('click', exportFinancesCSV);
+  document.getElementById('btn-export-excel')?.addEventListener('click', exportFinancesExcel);
+  document.getElementById('btn-export-pdf')?.addEventListener('click', exportFinancesPDF);
+  document.getElementById('btn-print-monthly')?.addEventListener('click', printMonthlyReport);
   document.getElementById('btn-add-income')?.addEventListener('click', () => openIncomeModal());
   document.getElementById('btn-add-expense')?.addEventListener('click', () => openExpenseModal());
   document.getElementById('btn-manage-categories')?.addEventListener('click', () => openCategoryManager());
@@ -2961,13 +3068,87 @@ function renderTopMonths() {
 function exportFinancesCSV() {
   const period = document.getElementById('finance-period')?.value || 'month';
   const t = financeTotals(period);
-  const rows = [['tipo','fecha','concepto','cliente/proveedor','monto','metodo']];
-  t.inc.forEach(i=>rows.push(['ingreso',i.date,i.concept,i.clientName||'',i.amount,i.paymentMethod||'']));
-  t.exp.forEach(e=>rows.push(['egreso',e.date,e.description,e.provider||'',e.amount,e.paymentMethod||'']));
-  const csv = rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=`finanzas-${period}.csv`; a.click();
-  showToast('CSV exportado','success');
+  downloadCSV(`finanzas-${period}.csv`, financeRows(t));
+  showToast('CSV exportado', 'success');
+}
+function financeRows(t) {
+  const rows = [['tipo', 'fecha', 'concepto', 'cliente/proveedor', 'monto', 'metodo']];
+  t.inc.forEach(i => rows.push(['ingreso', i.date, i.concept, i.clientName || '', i.amount, i.paymentMethod || '']));
+  t.exp.forEach(e => rows.push(['egreso', e.date, e.description, e.provider || '', e.amount, e.paymentMethod || '']));
+  rows.push(['', '', 'TOTAL INGRESOS', '', t.tInc, '']);
+  rows.push(['', '', 'TOTAL EGRESOS', '', t.tExp, '']);
+  rows.push(['', '', 'RESULTADO NETO', '', t.net, '']);
+  return rows;
+}
+function downloadCSV(filename, rows) {
+  const csv = rows.map(r => r.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function financePeriodLabel() {
+  const p = document.getElementById('finance-period')?.value || 'month';
+  const now = new Date();
+  if (p === 'month') return now.toLocaleDateString('es-PY', { month: 'long', year: 'numeric' });
+  if (p === 'year') return String(now.getFullYear());
+  if (p === 'quarter') return `T${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`;
+  return 'personalizado';
+}
+function exportFinancesExcel() {
+  const period = document.getElementById('finance-period')?.value || 'month';
+  const t = financeTotals(period);
+  const rows = financeRows(t);
+  if (typeof XLSX === 'undefined') { downloadCSV(`finanzas-${period}.csv`, rows); showToast('Excel no disponible offline: se descargó CSV', 'info'); return; }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Finanzas');
+  const byCat = {};
+  t.exp.forEach(e => { const n = expenseCategories.find(c => c.id === e.categoryId)?.name || 'Otros'; byCat[n] = (byCat[n] || 0) + (e.amount || 0); });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['categoria', 'total'], ...Object.entries(byCat)]), 'Por categoría');
+  XLSX.writeFile(wb, `finanzas-${period}.xlsx`);
+  showToast('Excel exportado', 'success');
+}
+function exportFinancesPDF() {
+  const period = document.getElementById('finance-period')?.value || 'month';
+  const t = financeTotals(period);
+  const hasJSPDF = typeof window.jspdf !== 'undefined';
+  if (!hasJSPDF || typeof window.jspdf.jsPDF !== 'function') { printMonthlyReport(); showToast('PDF offline: se abrió la planilla para imprimir', 'info'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.text(`${settings.companyName || 'Quinta'} — Resumen ${financePeriodLabel()}`, 14, 16);
+  doc.setFontSize(11);
+  doc.text(`Ingresos: ${formatGs(t.tInc)}    Egresos: ${formatGs(t.tExp)}    Neto: ${formatGs(t.net)}`, 14, 24);
+  doc.autoTable({
+    startY: 30,
+    head: [['Tipo', 'Fecha', 'Concepto', 'Cliente/Prov.', 'Monto']],
+    body: [
+      ...t.inc.map(i => ['Ingreso', i.date, i.concept, i.clientName || '', formatGs(i.amount)]),
+      ...t.exp.map(e => ['Egreso', e.date, e.description, e.provider || '', formatGs(e.amount)])
+    ],
+    styles: { fontSize: 8 }
+  });
+  doc.save(`finanzas-${period}.pdf`);
+  showToast('PDF exportado', 'success');
+}
+function printMonthlyReport() {
+  const t = financeTotals('month');
+  const el = document.getElementById('print-area');
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.innerHTML = `<div class="print-sheet">
+    <h1>${settings.companyName || 'Quinta'} — Planilla mensual</h1>
+    <p class="muted">${financePeriodLabel()} · Generado ${new Date().toLocaleString('es-PY')}</p>
+    <h2>Resumen: Ingresos ${formatGs(t.tInc)} · Egresos ${formatGs(t.tExp)} · Neto ${formatGs(t.net)}</h2>
+    <h2>Ingresos</h2>
+    <table><tr><th>Fecha</th><th>Concepto</th><th>Cliente</th><th>Monto</th></tr>
+    ${t.inc.map(i => `<tr><td>${i.date}</td><td>${i.concept}</td><td>${i.clientName || '-'}</td><td>${formatGs(i.amount)}</td></tr>`).join('') || '<tr><td colspan="4">Sin movimientos</td></tr>'}</table>
+    <h2>Egresos</h2>
+    <table><tr><th>Fecha</th><th>Descripción</th><th>Proveedor</th><th>Monto</th></tr>
+    ${t.exp.map(e => `<tr><td>${e.date}</td><td>${e.description}</td><td>${e.provider || '-'}</td><td>${formatGs(e.amount)}</td></tr>`).join('') || '<tr><td colspan="4">Sin movimientos</td></tr>'}</table>
+  </div>`;
+  window.print();
+  setTimeout(() => el.classList.add('hidden'), 500);
 }
 /* Ingresos */
 function renderIncomes() {
@@ -3074,6 +3255,8 @@ function renderSurveys() {
   const kpi = document.getElementById('surveys-kpis');
   if (!surveys.length) {
     if (kpi) kpi.innerHTML = '';
+    const tr0 = document.getElementById('surveys-trend');
+    if (tr0) tr0.innerHTML = '';
     c.innerHTML = '<div class="p-8 text-center text-sm text-gray-400">Aún no hay respuestas. Compartí el link <b>#encuesta</b> de la web a clientes que ya realizaron su evento.</div>';
     return;
   }
@@ -3081,6 +3264,33 @@ function renderSurveys() {
   const stars = v => '★'.repeat(Math.round(v)) + '<span class="text-gray-300">' + '★'.repeat(5 - Math.round(v)) + '</span>';
   if (kpi) kpi.innerHTML = `<div class="bg-white p-4 rounded-2xl border shadow-sm text-center"><span class="font-serif text-3xl font-extrabold text-amber-500">${avg('recomendar').toFixed(1)}</span><div class="text-amber-500 text-sm">${stars(avg('recomendar'))}</div><span class="text-[0.65rem] uppercase font-bold text-gray-500">Recomendación · ${surveys.length} respuestas</span></div>` +
     SURVEY_DIMS.slice(0, 4).map(d => `<div class="bg-white p-4 rounded-2xl border shadow-sm text-center"><span class="font-serif text-2xl font-bold text-forest-900">${avg(d.key).toFixed(1)}</span><div class="text-amber-500 text-xs">${stars(avg(d.key))}</div><span class="text-[0.65rem] uppercase font-bold text-gray-500">${d.label}</span></div>`).join('');
+  const tr = document.getElementById('surveys-trend');
+  if (tr) {
+    const byMonth = {};
+    surveys.forEach(s => {
+      const m = String(s.eventDate || s.createdAt || '').slice(0, 7);
+      if (!m) return;
+      (byMonth[m] = byMonth[m] || []).push(s);
+    });
+    const months = Object.keys(byMonth).sort().slice(-6);
+    const rec = surveys.map(s => (s.ratings && s.ratings.recomendar) || 0);
+    const prom = rec.filter(v => v === 5).length, det = rec.filter(v => v <= 3).length;
+    const nps = rec.length ? Math.round((prom / rec.length - det / rec.length) * 100) : 0;
+    tr.innerHTML = `<div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h4 class="font-bold text-gray-900 mb-1 flex items-center gap-2"><i class="fa-solid fa-arrow-trend-up text-emerald-600"></i> Tendencia mensual (recomendación)</h4>
+        <div class="flex items-end gap-2 h-20">${months.length ? months.map(m => {
+          const arr = byMonth[m].map(s => (s.ratings && s.ratings.recomendar) || 0);
+          const a = arr.reduce((x, y) => x + y, 0) / arr.length;
+          return `<div class="text-center"><div class="w-10 rounded-t-lg bg-emerald-500/80 mx-auto" style="height:${Math.max(6, a / 5 * 64)}px" title="${m}: ${a.toFixed(1)}"></div><span class="text-[0.6rem] text-gray-500">${m.slice(5)}/${m.slice(2, 4)}</span></div>`;
+        }).join('') : '<span class="text-xs text-gray-400">Sin datos aún.</span>'}</div>
+      </div>
+      <div class="text-center bg-white rounded-2xl border px-6 py-3">
+        <span class="font-serif text-3xl font-extrabold ${nps >= 50 ? 'text-emerald-600' : nps >= 0 ? 'text-amber-600' : 'text-red-600'}">${nps}</span>
+        <span class="block text-[0.65rem] uppercase font-bold text-gray-500">Puntaje (NPS)<br>${prom} prom · ${det} detr</span>
+      </div>
+    </div>`;
+  }
   c.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr><th class="px-3 py-2">Cliente</th><th class="px-3 py-2">Evento</th><th class="px-3 py-2 text-center">Prom.</th><th class="px-3 py-2">Comentario</th><th class="px-3 py-2 text-right">Acc.</th></tr></thead><tbody class="divide-y">` +
     surveys.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map(s => {
       const vals = SURVEY_DIMS.map(d => (s.ratings && s.ratings[d.key]) || 0);
@@ -3387,6 +3597,14 @@ function initSettingsManagement(){
     settings.autoConfirmEnabled=!!document.getElementById('setting-auto-confirm')?.checked;
     settings.maintenanceMode=!!document.getElementById('setting-maintenance')?.checked;
     settings.backupEnabled=!!document.getElementById('setting-backup')?.checked;
+    settings.sessionDays=Math.max(1,parseInt(document.getElementById('setting-session-days')?.value)||1);
+    settings.rememberDays=Math.max(1,parseInt(document.getElementById('setting-remember-days')?.value)||30);
+    const wt=settings.waTemplates||{};
+    ['confirmar','saldo','agradecer','verificado','rechazado'].forEach(k=>{
+      const v=document.getElementById('setting-wa-'+k)?.value;
+      if(v!==undefined&&v!==null)wt[k]=v;
+    });
+    settings.waTemplates=wt;
     const prevTermsVer=(settings.terms&&settings.terms.version)||'';
     const termsBody=document.getElementById('setting-terms-body')?.value||'';
     if(!termsBody.trim()){ showToast('El reglamento no puede quedar vacío.','error'); return; }
@@ -3420,6 +3638,20 @@ function initSettingsManagement(){
     a.href=URL.createObjectURL(blob);a.download=`quinta-backup-${getTodayStr()}.json`;a.click();showToast('Respaldo descargado','success');
   });
   document.getElementById('btn-import-all')?.addEventListener('click',()=>document.getElementById('import-file')?.click());
+  document.getElementById('btn-clean-backups')?.addEventListener('click',()=>{
+    if(!confirm('¿Borrar respaldos automáticos viejos? Se conserva el más reciente.'))return;
+    const keys=[];
+    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('quinta_backup_'))keys.push(k);}
+    keys.sort();
+    const keep=keys.slice(-1);
+    let n=0;
+    keys.forEach(k=>{if(!keep.includes(k)){localStorage.removeItem(k);n++;}});
+    logAudit('delete','backup','bulk',{removed:n},'warning');
+    renderStorageMeter();
+    showToast(n?`${n} respaldo(s) eliminados`:'Nada para limpiar','success');
+  });
+  document.getElementById('btn-archive-year')?.addEventListener('click',()=>openArchiveYearModal());
+  renderStorageMeter();
   document.getElementById('btn-clear-all')?.addEventListener('click',()=>{
     if(!confirm('¿BORRAR TODO? Esta acción es irreversible.'))return;
     if(!confirm('Confirma por segunda vez: se perderán reservas, finanzas y configuración.'))return;
@@ -3430,6 +3662,9 @@ function renderSettings(){
   const s=(id,v)=>{const el=document.getElementById(id);if(el&&el.value!==undefined&&document.activeElement!==el)el.value=v??'';};
   s('setting-company-name',settings.companyName);s('setting-company-address',settings.companyAddress);s('setting-company-phone',settings.companyPhone);s('setting-company-email',settings.companyEmail);s('setting-whatsapp',settings.whatsappNumber);
   s('setting-currency',settings.currency);s('setting-currency-symbol',settings.currencySymbol);s('setting-timezone',settings.timezone);s('setting-date-format',settings.dateFormat);s('setting-alert-days',settings.alertDaysBefore);
+  s('setting-session-days',settings.sessionDays||1);s('setting-remember-days',settings.rememberDays||30);
+  const wt=settings.waTemplates||{};
+  ['confirmar','saldo','agradecer','verificado','rechazado'].forEach(k=>s('setting-wa-'+k,wt[k]||''));
   const dep=settings.deposit||{};
   s('setting-deposit-mode',dep.mode||'percent');
   s('setting-deposit-value',dep.mode==='fixed'?(dep.fixed||0):(dep.percent||50));
@@ -3443,6 +3678,86 @@ function renderSettings(){
   const tb=document.getElementById('setting-terms-body');
   if(tb&&document.activeElement!==tb)tb.value=tm.body||'';
   c('setting-terms-active',tm.active);
+}
+function storageBytes() {
+  let n = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      n += (k || '').length + (localStorage.getItem(k) || '').length;
+    }
+  } catch (e) { /* noop */ }
+  return n * 2; // UTF-16 aprox
+}
+function renderStorageMeter() {
+  const txt = document.getElementById('storage-meter-txt');
+  const bar = document.getElementById('storage-meter-bar');
+  if (!txt) return;
+  const b = storageBytes();
+  const mb = (b / 1048576).toFixed(2);
+  const pct = Math.min(100, Math.round(b / 5242880 * 100)); // ~5MB típico
+  txt.textContent = `${mb} MB aprox. (${pct}% de ~5 MB)`;
+  if (bar) { bar.style.width = pct + '%'; bar.className = 'h-full rounded-full ' + (pct > 85 ? 'bg-red-600' : pct > 60 ? 'bg-amber-500' : 'bg-forest-700'); }
+}
+function openArchiveYearModal() {
+  const years = [...new Set([
+    ...reservations.map(r => String(getPrimaryDateOfReservation(r) || r.date || '').slice(0, 4)),
+    ...incomes.map(i => String(i.date || '').slice(0, 4)),
+    ...expenses.map(e => String(e.date || '').slice(0, 4))
+  ])].filter(y => /^\d{4}$/.test(y) && y < String(new Date().getFullYear())).sort().reverse();
+  if (!years.length) return showToast('No hay años cerrados para archivar.', 'info');
+  openGenericModal({
+    title: 'Archivar año cerrado', subtitle: 'Exporta y libera espacio',
+    bodyHtml: `${lbl('Año')}<select name="year" class="${inputCls()}">${years.map(y => `<option>${y}</option>`).join('')}</select>
+    <p class="text-xs text-gray-500">Se descargará un JSON con reservas, pagos, ingresos y egresos del año, y luego se eliminarán del sistema activo. Queda en auditoría.</p>`,
+    submitLabel: 'Archivar',
+    onSubmit: (d) => {
+      const y = d.year;
+      if (!confirm(`¿Archivar ${y}? Se descargará el respaldo y se borrarán esos datos del sistema.`)) return;
+      const inYear = (ds) => String(ds || '').startsWith(y + '-');
+      const dump = { year: y, archivedAt: nowISO(), by: currentUser?.id,
+        reservations: reservations.filter(r => inYear(getPrimaryDateOfReservation(r) || r.date)),
+        payments: [], incomes: incomes.filter(i => inYear(i.date)), expenses: expenses.filter(e => inYear(e.date)) };
+      const keepRes = new Set(dump.reservations.map(r => r.id));
+      dump.payments = payments.filter(p => keepRes.has(p.reservationId));
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = `archivo-${y}.json`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      const delRes = new Set(dump.reservations.map(r => r.id));
+      reservations = reservations.filter(r => !delRes.has(r.id));
+      reservationSpaces = reservationSpaces.filter(rs => !delRes.has(rs.reservationId));
+      payments = payments.filter(p => !delRes.has(p.reservationId));
+      deposits = deposits.filter(x => !delRes.has(x.reservationId));
+      checklists = checklists.filter(x => !delRes.has(x.reservationId));
+      incomes = incomes.filter(i => !inYear(i.date));
+      expenses = expenses.filter(e => !inYear(e.date));
+      saveAll();
+      logAudit('archive', 'year', y, { reservas: dump.reservations.length }, 'warning');
+      closeGenericModal(); renderDashboard();
+      showToast(`Año ${y} archivado y descargado.`, 'success');
+    }
+  });
+}
+function openAccountModal() {
+  if (!currentUser) return;
+  openGenericModal({
+    title: 'Mi cuenta', subtitle: currentUser.email,
+    bodyHtml: `${lbl('Nombre')}<input name="name" value="${currentUser.name || ''}" class="${inputCls()}">
+    ${lbl('Nueva contraseña (vacío = no cambiar)')}<input name="password" type="password" autocomplete="new-password" class="${inputCls()}">`,
+    submitLabel: 'Guardar',
+    onSubmit: (d) => {
+      if (d.name.trim()) currentUser.name = d.name.trim();
+      if (d.password) {
+        if (d.password.length < 6) { showToast('Mínimo 6 caracteres.', 'error'); return; }
+        currentUser.password = d.password;
+      }
+      saveJSON(STORAGE_KEYS.USERS, users);
+      logAudit('update', 'user', currentUser.id, { self: true }, 'info');
+      closeGenericModal(); showApp();
+      showToast('Cuenta actualizada.', 'success');
+    }
+  });
 }
 function handleImport(e){
   const f=e.target.files?.[0];if(!f)return;
@@ -3844,8 +4159,9 @@ function depositDetailHtml(resId) {
     <div class="text-[0.65rem] text-gray-400">Clic para ampliar en tamaño completo.</div>` : '<div class="text-xs text-gray-400">Sin imagen adjunta.</div>'}
   </div>`;
   if (canAct && d.status === DEPOSIT_STATUS.PENDING) {
-    const waV = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(`¡Hola ${last.clientName || ''}! 🌿 Te avisamos desde *${settings.companyName}*: tu pago de seña de *${formatGs(d.amount)}* fue *VERIFICADO* y tu reserva quedó *CONFIRMADA*. ¡Gracias!`)}`;
-    const waR = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(`¡Hola! Te avisamos desde *${settings.companyName}*: tu comprobante de seña fue *RECHAZADO*. Motivo: ${d.rejectReason || ''}. Podés reenviarlo desde la web. ¡Gracias!`)}`;
+    const r0 = reservations.find(x => x.id === resId) || {};
+    const waV = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(waRender('verificado',{nombre:(r0.clientName||'').split(' ').slice(0,2).join(' '),fecha:getPrimaryDateOfReservation(r0)||'',monto:formatGs(d.amount)}))}`;
+    const waR = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(waRender('rechazado',{nombre:(r0.clientName||'').split(' ').slice(0,2).join(' '),motivo:d.rejectReason||''}))}`;
     html += `<div class="flex flex-wrap gap-2" id="deposit-actions">
       <button type="button" onclick="verifyDeposit('${resId}')" class="btn-forest px-3 py-1.5 rounded-lg text-xs font-bold"><i class="fa-solid fa-check mr-1"></i>Verificar y aplicar reserva</button>
       <button type="button" onclick="closeGenericModal()" class="px-3 py-1.5 rounded-lg border text-xs font-bold">Verificar más tarde</button>
@@ -3925,12 +4241,80 @@ function openRejectDeposit(resId) {
         const r = reservations.find(x => x.id === resId) || {};
         const a = document.getElementById('wa-reject-link');
         if (a) {
-          a.href = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(`¡Hola ${r.clientName || ''}! Te avisamos desde *${settings.companyName}*: tu comprobante de seña fue *RECHAZADO*. Motivo: ${reason}. Podés reenviarlo desde la web. ¡Gracias!`)}`;
+          a.href = `https://wa.me/${waPhoneOf(resId)}?text=${encodeURIComponent(waRender('rechazado',{nombre:(r.clientName||'').split(' ').slice(0,2).join(' '),motivo:reason}))}`;
           a.classList.remove('hidden');
         }
       }, 50);
     }
   });
+}
+/* ==========================================================================
+   CHECKLIST OPERATIVO POR EVENTO
+   ========================================================================== */
+const CHECKLIST_PRESET = ['Limpieza general del predio', 'Limpieza y cloro de piscina', 'Revisar salón y baños', 'Probar luces y sonido', 'Revisar parrilla y quincho', 'Verificar estacionamiento y portón'];
+function resChecklists(resId) {
+  return checklists.filter(t => t.reservationId === resId);
+}
+function checklistHtml(resId) {
+  const list = resChecklists(resId);
+  const done = list.filter(t => t.done).length;
+  return `<div class="text-sm bg-purple-50/60 rounded-xl border border-purple-200 p-3 space-y-2">
+    <div class="flex items-center justify-between"><b>Checklist operativo (${done}/${list.length})</b>
+    <button type="button" onclick="openChecklistModal('${resId}')" class="px-2.5 py-1 rounded-lg bg-white border text-xs font-bold">Gestionar</button></div>
+    ${list.length ? `<div class="live-bar"><span style="width:${Math.round(done / list.length * 100)}%"></span></div>` + list.map(t => `
+      <label class="flex items-center gap-2 text-xs bg-white rounded-lg border p-2 cursor-pointer">
+        <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleChecklist('${t.id}');openReservationDetail('${resId}')" class="rounded">
+        <span class="${t.done ? 'line-through text-gray-400' : ''}">${t.title}</span>
+        ${t.assignee ? `<span class="ml-auto text-gray-400">${t.assignee}${t.done && t.doneBy ? ' ✓ ' + t.doneBy : ''}</span>` : ''}
+      </label>`).join('') : '<p class="text-xs text-gray-400">Sin tareas. Agregá desde Gestionar.</p>'}
+  </div>`;
+}
+function openChecklistModal(resId) {
+  const list = resChecklists(resId);
+  openGenericModal({
+    title: 'Checklist operativo', subtitle: 'Tareas del evento',
+    bodyHtml: `<div class="space-y-2 max-h-[40vh] overflow-y-auto">` + (list.length ? list.map(t => `
+      <div class="flex items-center gap-2 p-2 rounded-xl border bg-white text-sm">
+        <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleChecklist('${t.id}');openChecklistModal('${resId}')" class="rounded">
+        <span class="flex-1 ${t.done ? 'line-through text-gray-400' : ''}">${t.title}<span class="block text-xs text-gray-400">${t.assignee || 'Sin asignar'}</span></span>
+        <button type="button" onclick="deleteChecklist('${t.id}');openChecklistModal('${resId}')" class="p-1.5 text-gray-400 hover:text-red-600"><i class="fa-regular fa-trash-can"></i></button>
+      </div>`).join('') : '<p class="text-xs text-gray-400">Sin tareas.</p>') + `</div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t">
+        <input id="chk-new-title" placeholder="Nueva tarea…" class="${inputCls()} sm:col-span-2">
+        <input id="chk-new-assignee" placeholder="Asignado a…" class="${inputCls()}">
+      </div>
+      <div class="flex flex-wrap gap-2">${CHECKLIST_PRESET.map(p => `<button type="button" onclick="addChecklist('${resId}','${p}','')" class="px-2.5 py-1 rounded-lg bg-gray-100 text-xs font-bold hover:bg-gray-200">+ ${p}</button>`).join('')}</div>`,
+    submitLabel: 'Agregar',
+    onSubmit: () => {
+      const title = document.getElementById('chk-new-title')?.value.trim();
+      if (!title) { showToast('Escribí la tarea.', 'error'); return; }
+      addChecklist(resId, title, document.getElementById('chk-new-assignee')?.value.trim() || '');
+      openChecklistModal(resId);
+    }
+  });
+}
+function addChecklist(resId, title, assignee) {
+  const t = { id: generateId('chk'), reservationId: resId, title, assignee: assignee || '', done: false, doneBy: '', doneAt: '', createdAt: nowISO(), createdBy: currentUser?.id || '' };
+  checklists.push(t);
+  saveJSON(STORAGE_KEYS.CHECKLISTS, checklists);
+  logAudit('create', 'checklist', t.id, { reservation: resId, title }, 'info');
+  renderDashboard(); notifyDataChanged();
+}
+function toggleChecklist(id) {
+  const t = checklists.find(x => x.id === id);
+  if (!t) return;
+  t.done = !t.done;
+  t.doneBy = t.done ? (currentUser?.name || '') : '';
+  t.doneAt = t.done ? nowISO() : '';
+  saveJSON(STORAGE_KEYS.CHECKLISTS, checklists);
+  logAudit('update', 'checklist', id, { done: t.done, by: t.doneBy }, 'info');
+  renderDashboard(); notifyDataChanged();
+}
+function deleteChecklist(id) {
+  checklists = checklists.filter(x => x.id !== id);
+  saveJSON(STORAGE_KEYS.CHECKLISTS, checklists);
+  logAudit('delete', 'checklist', id, {}, 'warning');
+  renderDashboard(); notifyDataChanged();
 }
 /* ---- Recibo imprimible (reserva o pago individual) ---- */
 function openReceipt(resId, paymentId = null) {
@@ -3982,7 +4366,7 @@ function getWhatsAppLinkForClient(r){
   const bal=Math.max(0,(r.totalPrice??r.estimatedPrice??0)-(r.paidAmount||0));
   let message='';
   if(['confirmada','pagado_parcial','pagado'].includes(normStatus(r.status))){
-    message=`¡Hola ${r.clientName}! 🌿 Te saludamos desde *${settings.companyName}*.\nTu reserva del *${formattedDate}* está confirmada. Total ${formatGs(r.totalPrice??r.estimatedPrice)} · Pagado ${formatGs(r.paidAmount||0)} · Saldo ${formatGs(bal)}. ¿Coordinamos detalles?`;
+    message=waRender('confirmar',{nombre:(r.clientName||'').split(' ').slice(0,2).join(' '),fecha:formattedDate,saldo:formatGs(bal),monto:formatGs(r.totalPrice??r.estimatedPrice)});
   } else {
     message=`¡Hola ${r.clientName}! 🌿 Te saludamos desde *${settings.companyName}*.\nRecibimos tu solicitud para el *${formattedDate}*. ¿Seguís interesado/a? Te confirmamos disponibilidad y precio.`;
   }
@@ -4069,6 +4453,217 @@ function renderAlerts(){
   }
   panel.innerHTML=html;
 }
+/* ==========================================================================
+   AGENDA HOY + RECORDATORIOS ACCIONABLES
+   ========================================================================== */
+function initToday(){ /* render bajo demanda en renderDashboard */ }
+function todayResList() {
+  const t = getTodayStr();
+  return reservations.filter(r => {
+    if (!isActiveReservation(r)) return false;
+    return getSpacesOfReservation(r.id).some(x => x.date === t) || r.date === t;
+  });
+}
+function upcomingResList(days = 7) {
+  const t = getTodayStr();
+  const lim = new Date(); lim.setDate(lim.getDate() + days);
+  const limStr = toDateStr(lim);
+  return reservations.filter(r => {
+    if (!isActiveReservation(r)) return false;
+    const d = getPrimaryDateOfReservation(r) || r.date || '';
+    return d > t && d <= limStr;
+  }).sort((a, b) => String(getPrimaryDateOfReservation(a) || '').localeCompare(String(getPrimaryDateOfReservation(b) || '')));
+}
+function resBalance(r) { return Math.max(0, (r.totalPrice ?? r.estimatedPrice ?? 0) - (r.paidAmount || 0)); }
+function resSpacesTxt(r) {
+  const sps = getSpacesOfReservation(r.id);
+  if (sps.length) return sps.map(x => {
+    const t = getTurnById(x.turnId);
+    return `${getSpaceById(x.spaceId)?.shortName || x.spaceId} ${x.customStart || t?.startTime || ''}–${x.customEnd || t?.endTime || ''} ${x.date.slice(5)}`;
+  }).join(' · ');
+  return `${r.eventType || ''} ${r.date || ''}`;
+}
+function renderToday() {
+  const title = document.getElementById('today-title');
+  if (!title) return;
+  const now = new Date();
+  title.textContent = 'Hoy · ' + now.toLocaleDateString('es-PY', { weekday: 'long', day: 'numeric', month: 'long' });
+  const todays = todayResList();
+  const upcoming = upcomingResList(7);
+  const collect = reservations.filter(r => isActiveReservation(r) && resBalance(r) > 0)
+    .sort((a, b) => resBalance(b) - resBalance(a)).slice(0, 8);
+  const pendingTasks = checklists.filter(t => !t.done).slice(0, 8);
+
+  document.getElementById('today-kpis').innerHTML = [
+    { l: 'Eventos hoy', v: todays.length, i: 'fa-calendar-day', bg: 'bg-emerald-50 text-emerald-700' },
+    { l: 'Próximos 7 días', v: upcoming.length, i: 'fa-forward', bg: 'bg-sky-50 text-sky-700' },
+    { l: 'Por cobrar', v: formatGs(collect.reduce((a, r) => a + resBalance(r), 0)), i: 'fa-sack-dollar', bg: 'bg-amber-50 text-amber-700' },
+    { l: 'Tareas abiertas', v: pendingTasks.length, i: 'fa-list-check', bg: 'bg-purple-50 text-purple-700' }
+  ].map(k => `<div class="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between"><div><span class="text-[0.65rem] uppercase font-bold text-gray-500 block">${k.l}</span><span class="font-serif text-xl sm:text-2xl font-bold text-forest-900">${k.v}</span></div><div class="w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center"><i class="fa-solid ${k.i}"></i></div></div>`).join('');
+
+  const ev = document.getElementById('today-events');
+  ev.innerHTML = todays.length ? todays.map(r => `
+    <div class="p-3 rounded-2xl border border-gray-200 bg-gray-50/60 text-sm">
+      <div class="flex items-center justify-between gap-2"><b class="truncate">${r.clientName}</b>${statusBadge(r.status)}</div>
+      <div class="text-xs text-gray-500 mt-0.5">${resSpacesTxt(r)}</div>
+      <div class="flex flex-wrap gap-1.5 mt-2">
+        <button onclick="openReservationDetail('${r.id}')" class="px-2.5 py-1 rounded-lg bg-white border text-xs font-bold">Abrir</button>
+        ${resBalance(r) > 0 ? `<button onclick="openPaymentModal('${r.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-bold">Cobrar ${formatGs(resBalance(r))}</button>` : ''}
+        <a target="_blank" href="${waLinkFor(r.id, 'saldo', waVarsOf(r))}" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold"><i class="fa-brands fa-whatsapp mr-1"></i>Recordar</a>
+      </div></div>`).join('')
+    : '<p class="text-xs text-gray-400 p-3 text-center border border-dashed rounded-2xl">Sin eventos hoy. Día libre 🎉</p>';
+
+  const up = document.getElementById('today-upcoming');
+  up.innerHTML = upcoming.length ? upcoming.map(r => `
+    <div class="p-3 rounded-2xl border border-gray-200 bg-gray-50/60 text-sm flex items-center justify-between gap-2">
+      <div class="min-w-0"><b class="truncate block">${r.clientName}</b><span class="text-xs text-gray-500">${getPrimaryDateOfReservation(r) || ''} · ${resSpacesTxt(r)}</span></div>
+      <div class="flex gap-1.5 shrink-0">
+        <button onclick="openReservationDetail('${r.id}')" class="px-2.5 py-1 rounded-lg bg-white border text-xs font-bold">Abrir</button>
+        ${resBalance(r) > 0 ? `<a target="_blank" href="${waLinkFor(r.id, 'saldo', waVarsOf(r))}" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
+      </div></div>`).join('')
+    : '<p class="text-xs text-gray-400 p-3 text-center border border-dashed rounded-2xl">Nada en los próximos 7 días.</p>';
+
+  const cl = document.getElementById('today-collect');
+  cl.innerHTML = collect.length ? collect.map(r => `
+    <div class="p-3 rounded-2xl border border-amber-200 bg-amber-50/60 text-sm flex items-center justify-between gap-2">
+      <div class="min-w-0"><b class="truncate block">${r.clientName}</b><span class="text-xs text-amber-700 font-bold">${formatGs(resBalance(r))} pendiente</span></div>
+      <div class="flex gap-1.5 shrink-0">
+        <button onclick="openPaymentModal('${r.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-bold">Cobrar</button>
+        <a target="_blank" href="${waLinkFor(r.id, 'saldo', waVarsOf(r))}" class="px-2.5 py-1 rounded-lg bg-white border text-xs font-bold"><i class="fa-brands fa-whatsapp text-emerald-600"></i></a>
+      </div></div>`).join('')
+    : '<p class="text-xs text-gray-400 p-3 text-center border border-dashed rounded-2xl">Todo cobrado. 🎉</p>';
+
+  const tk = document.getElementById('today-tasks');
+  tk.innerHTML = pendingTasks.length ? pendingTasks.map(t => {
+    const r = reservations.find(x => x.id === t.reservationId) || {};
+    return `<div class="p-3 rounded-2xl border border-gray-200 bg-gray-50/60 text-sm flex items-center justify-between gap-2">
+      <div class="min-w-0"><b class="truncate block">${t.title}</b><span class="text-xs text-gray-500">${r.clientName || ''} ${t.assignee ? '· ' + t.assignee : ''}</span></div>
+      <button onclick="toggleChecklist('${t.id}')" class="px-3 py-1.5 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold shrink-0">Hecha ✓</button>
+    </div>`;
+  }).join('')
+    : '<p class="text-xs text-gray-400 p-3 text-center border border-dashed rounded-2xl">Sin tareas pendientes.</p>';
+}
+function waVarsOf(r) {
+  return {
+    nombre: (r.clientName || '').split(' ').slice(0, 2).join(' '),
+    fecha: getPrimaryDateOfReservation(r) || r.date || '',
+    saldo: formatGs(resBalance(r)),
+    monto: formatGs(resAmount(r))
+  };
+}
+/* ==========================================================================
+   DIRECTORIO DE CLIENTES + BÚSQUEDA GLOBAL
+   ========================================================================== */
+function normClientPhone(p) { return String(p || '').replace(/[^0-9]/g, ''); }
+function buildClients() {
+  const map = new Map();
+  reservations.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).forEach(r => {
+    const key = normClientPhone(r.phone);
+    if (!key) return;
+    if (!map.has(key)) map.set(key, { phone: key, displayPhone: r.phone, name: r.clientName, reservations: [], paid: 0, balance: 0, lastDate: '' });
+    const c = map.get(key);
+    if (!c.name && r.clientName) c.name = r.clientName;
+    c.reservations.push(r);
+    c.paid += (r.paidAmount || 0);
+    if (isActiveReservation(r)) c.balance += Math.max(0, (r.totalPrice ?? r.estimatedPrice ?? 0) - (r.paidAmount || 0));
+    const d = getPrimaryDateOfReservation(r) || r.date || '';
+    if (d && (!c.lastDate || d > c.lastDate)) c.lastDate = d;
+  });
+  return [...map.values()].map(c => {
+    const tags = [];
+    if (c.balance > 0) tags.push({ l: 'Moroso', c: 'bg-red-100 text-red-700' });
+    else tags.push({ l: 'Al día', c: 'bg-emerald-100 text-emerald-800' });
+    if (c.reservations.length >= 3) tags.push({ l: 'Frecuente', c: 'bg-sky-100 text-sky-800' });
+    else if (c.reservations.length === 1) tags.push({ l: 'Nuevo', c: 'bg-gray-100 text-gray-600' });
+    return Object.assign(c, { tags, count: c.reservations.length });
+  }).sort((a, b) => b.paid - a.paid);
+}
+let clientSearch = '';
+function initClients() {
+  document.getElementById('search-clients')?.addEventListener('input', (e) => {
+    clientSearch = e.target.value.toLowerCase().trim();
+    renderClients();
+  });
+}
+function initClientEvents() { /* reservado para eventos delegados futuros */ }
+function renderClients() {
+  const c = document.getElementById('clients-list');
+  if (!c) return;
+  let list = buildClients();
+  if (clientSearch) list = list.filter(x => (x.name || '').toLowerCase().includes(clientSearch) || x.phone.includes(clientSearch.replace(/[^0-9]/g, '')));
+  if (!list.length) { c.innerHTML = '<p class="text-sm text-gray-400 p-6 text-center col-span-full">Sin clientes todavía.</p>'; return; }
+  c.innerHTML = list.map(x => `
+    <div class="p-5 rounded-2xl border border-gray-200 bg-gray-50/60 space-y-2">
+      <div class="flex items-center justify-between gap-2">
+        <b class="truncate">${x.name || 'Sin nombre'}</b>
+        <span class="flex gap-1 shrink-0">${x.tags.map(t => `<span class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold ${t.c}">${t.l}</span>`).join('')}</span>
+      </div>
+      <div class="text-xs text-gray-500">${x.displayPhone} · ${x.count} reserva${x.count === 1 ? '' : 's'} · última: ${x.lastDate || '-'}</div>
+      <div class="flex gap-4 text-xs pt-1 border-t border-gray-100">
+        <span>Gastado: <b class="text-emerald-700">${formatGs(x.paid)}</b></span>
+        ${x.balance > 0 ? `<span>Debe: <b class="text-red-700">${formatGs(x.balance)}</b></span>` : ''}
+      </div>
+      <div class="flex gap-1.5">
+        <button onclick="openClientDetail('${x.phone}')" class="px-3 py-1.5 rounded-lg bg-white border text-xs font-bold">Ficha</button>
+        <button onclick="openClientReservations('${x.phone}')" class="px-3 py-1.5 rounded-lg bg-white border text-xs font-bold">Reservas</button>
+      </div>
+    </div>`).join('');
+}
+function openClientDetail(phone) {
+  const x = buildClients().find(c => c.phone === phone);
+  if (!x) return;
+  const latest = x.reservations.find(r => isActiveReservation(r)) || x.reservations[0];
+  openGenericModal({
+    title: x.name || 'Cliente', subtitle: `${x.displayPhone} · ${x.count} reservas`,
+    bodyHtml: `<div class="grid grid-cols-3 gap-3 text-sm">
+      <div class="bg-gray-50 rounded-xl border p-3 text-center"><span class="text-xs text-gray-500 block">Gastado</span><b class="text-emerald-700">${formatGs(x.paid)}</b></div>
+      <div class="bg-gray-50 rounded-xl border p-3 text-center"><span class="text-xs text-gray-500 block">Saldo</span><b class="${x.balance > 0 ? 'text-red-700' : 'text-gray-400'}">${formatGs(x.balance)}</b></div>
+      <div class="bg-gray-50 rounded-xl border p-3 text-center"><span class="text-xs text-gray-500 block">Última</span><b>${x.lastDate || '-'}</b></div></div>
+      <div class="flex flex-wrap gap-1.5">${x.tags.map(t => `<span class="px-2 py-0.5 rounded-full text-xs font-bold ${t.c}">${t.l}</span>`).join('')}</div>
+      <div class="text-sm"><b>Historial</b>${x.reservations.map(r => `<div class="text-xs flex justify-between gap-2 p-2 bg-gray-50 rounded-lg border mt-1"><span>${getPrimaryDateOfReservation(r) || r.date || '-'} · ${resSpacesTxt(r)}</span><span>${statusBadge(r.status)}</span></div>`).join('')}</div>`,
+    submitLabel: 'WhatsApp',
+    onSubmit: () => { closeGenericModal(); if (latest) window.open(waLinkFor(latest.id, 'saldo', waVarsOf(latest)), '_blank'); }
+  });
+}
+function openClientReservations(phone) {
+  gotoTab('reservations');
+  const input = document.getElementById('search-reservations');
+  const x = buildClients().find(c => c.phone === phone);
+  if (input && x) { input.value = x.displayPhone || phone; searchQuery = (x.displayPhone || '').toLowerCase(); }
+  activeFilter = 'todas';
+  document.querySelectorAll('.filter-tab-btn').forEach(b => {
+    const on = b.getAttribute('data-filter') === 'todas';
+    b.classList.toggle('bg-forest-800', on); b.classList.toggle('text-white', on); b.classList.toggle('shadow', on);
+    b.classList.toggle('bg-white', !on); b.classList.toggle('text-gray-600', !on);
+  });
+  renderReservationsTable();
+}
+function initGlobalSearch() {
+  const input = document.getElementById('global-search');
+  const box = document.getElementById('global-search-results');
+  if (!input || !box || input.dataset.bound) return;
+  input.dataset.bound = '1';
+  const close = () => box.classList.add('hidden');
+  input.addEventListener('input', () => {
+    const q = input.value.toLowerCase().trim();
+    if (q.length < 2) { close(); return; }
+    const qd = q.replace(/[^0-9]/g, '');
+    const out = [];
+    reservations.filter(r => (r.clientName || '').toLowerCase().includes(q) || (r.phone || '').includes(qd) || String(r.id).toLowerCase().includes(q)).slice(0, 5).forEach(r =>
+      out.push({ icon: 'fa-calendar-day', cls: 'text-sky-600', title: r.clientName, sub: `${getPrimaryDateOfReservation(r) || ''} · ${formatGs(resAmount(r))}`, fn: `openReservationDetail('${r.id}')` }));
+    [...payments, ...incomes].filter(p => String(p.amount) === qd && qd).slice(0, 3).forEach(p =>
+      out.push({ icon: 'fa-money-bill-wave', cls: 'text-emerald-600', title: formatGs(p.amount), sub: `${p.date} · ${p.clientName || p.concept || ''}`, fn: p.reservationId ? `openReservationDetail('${p.reservationId}')` : `gotoTab('finances')` }));
+    expenses.filter(e => (e.description || '').toLowerCase().includes(q) || (e.provider || '').toLowerCase().includes(q)).slice(0, 3).forEach(e =>
+      out.push({ icon: 'fa-arrow-up-from-bracket', cls: 'text-red-600', title: e.description, sub: `${e.date} · ${formatGs(e.amount)}`, fn: `gotoTab('expenses')` }));
+    buildClients().filter(c => (c.name || '').toLowerCase().includes(q) || c.phone.includes(qd)).slice(0, 3).forEach(c =>
+      out.push({ icon: 'fa-user', cls: 'text-indigo-600', title: c.name, sub: `${c.displayPhone} · ${c.count} reservas`, fn: `openClientDetail('${c.phone}')` }));
+    box.innerHTML = out.length ? out.map(o => `<button onclick="document.getElementById('global-search-results').classList.add('hidden');${o.fn}" class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3 border-b border-gray-100 last:border-0"><i class="fa-solid ${o.icon} ${o.cls}"></i><span class="min-w-0"><b class="block text-sm truncate">${o.title}</b><span class="block text-xs text-gray-400 truncate">${o.sub}</span></span></button>`).join('')
+      : '<p class="text-xs text-gray-400 p-4 text-center">Sin resultados.</p>';
+    box.classList.remove('hidden');
+  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { close(); input.blur(); } });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#global-search-results') && e.target.id !== 'global-search') close(); });
+}
 /* ---- Tabla reservas mejorada + estados ---- */
 const STATUS_META={
   solicitud:{l:'Solicitud',c:'bg-sky-100 text-sky-800'},pendiente:{l:'Pendiente',c:'bg-amber-100 text-amber-800'},
@@ -4145,7 +4740,8 @@ function openReservationDetail(id){
       ${r.notes?`<div class="text-xs text-gray-500">Notas: ${r.notes}</div>`:''}
       ${r.termsAccepted?`<div class="text-xs text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200 p-2">✅ Reglamento aceptado (${r.termsVersion||'s/v'}) · ${r.termsAcceptedAt?new Date(r.termsAcceptedAt).toLocaleString('es-PY'):''}</div>`:`<div class="text-xs text-gray-400 bg-gray-50 rounded-xl border p-2">Reglamento: sin aceptación registrada.</div>`}
       ${depositDetailHtml(id)}
-      <div class="flex flex-wrap gap-2"><button type="button" onclick="openReceipt('${r.id}')" class="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-bold hover:bg-gray-100"><i class="fa-solid fa-print mr-1"></i>Imprimir recibo / confirmación</button></div>
+      ${typeof checklistHtml === 'function' ? checklistHtml(id) : ''}
+      <div class="flex flex-wrap gap-2"><button type="button" onclick="openReceipt('${r.id}')" class="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-bold hover:bg-gray-100"><i class="fa-solid fa-print mr-1"></i>Imprimir recibo / confirmación</button><a target="_blank" href="https://wa.me/${waPhoneOf(r.id)}?text=${encodeURIComponent(waRender('agradecer',{nombre:(r.clientName||'').split(' ').slice(0,2).join(' ')}))}" class="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 text-xs font-bold hover:bg-emerald-50"><i class="fa-solid fa-heart mr-1"></i>Agradecer</a></div>
       ${nextStates.length?`${lbl('Cambiar estado')}<div class="flex flex-wrap gap-2">`+nextStates.map(s=>`<button type="button" onclick="updateReservationStatus('${r.id}','${s}');closeGenericModal();openReservationDetail('${r.id}')" class="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-gray-100">${STATUS_META[s]?.l||s}</button>`).join('')+`</div>`:''}
       <div class="text-xs"><b>Historial</b>${hist.map(h=>`<div class="text-gray-500">· ${new Date(h.timestamp).toLocaleString('es-PY')} — ${h.userName}: ${h.action} ${h.entityType}</div>`).join('')||'<div class="text-gray-400">Sin historial</div>'}</div>`,
     submitLabel:'Registrar pago', onSubmit:()=>{closeGenericModal();openPaymentModal(id);}});

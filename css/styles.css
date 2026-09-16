@@ -526,6 +526,19 @@ canvas { max-width: 100%; }
 .live-bar > span { display: block; height: 100%; background: linear-gradient(90deg, #d4a373, #bc6c25); border-radius: 9999px; }
 
 @media (max-width: 768px) {
-  .adv-hwrap { min-width: 680px; }
+  .adv-hwrap { min-width: 620px; }
   .adv-hcol { font-size: 0.52rem; }
+}
+
+/* Impresión de reportes: solo el área de impresión */
+@media print {
+  body > *:not(#print-area) { display: none !important; }
+  #print-area { display: block !important; }
+  .print-sheet { font-family: Arial, sans-serif; color: #111; padding: 8px; }
+  .print-sheet h1 { font-size: 20px; margin: 0 0 2px; }
+  .print-sheet h2 { font-size: 13px; margin: 14px 0 6px; color: #333; }
+  .print-sheet table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .print-sheet th, .print-sheet td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
+  .print-sheet th { background: #eee; }
+  .print-sheet .muted { color: #555; font-size: 11px; }
 }

@@ -178,7 +178,7 @@ function initBookingForm() {
       range.entries.forEach(ent => {
         const dow = new Date(ent.date + 'T00:00:00').getDay();
         const hrs = bookingEntryHours(ent);
-        const hol = (holidays || []).filter(h => h.active !== false).find(h => h.date === ent.date);
+        const hol = (holidays || []).filter(h => h.active !== false).find(h => h.date === ent.date || (!!h.repeatYearly && String(h.date || '').slice(5) === ent.date.slice(5)));
         const holExtra = hol ? (hol.surcharge || 0) : 0;
         selectedSpaces.forEach(sid => {
           let price = 0, hit = false;
@@ -1050,7 +1050,7 @@ function initQuoteCalculator() {
       while (new Date(t.getFullYear(), t.getMonth(), t.getDate() + add).getDay() !== dayDow) add++;
       const ref = new Date(t.getFullYear(), t.getMonth(), t.getDate() + add);
       const dateStr = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}-${String(ref.getDate()).padStart(2, '0')}`;
-      const hol = holidays.filter(h => h.active !== false).find(h => h.date === dateStr);
+      const hol = (holidays || []).filter(h => h.active !== false).find(h => h.date === dateStr || (!!h.repeatYearly && String(h.date || '').slice(5) === dateStr.slice(5)));
       const holExtra = hol ? (hol.surcharge || 0) : 0;
 
       const cfg = eventMap[selectedEvent] || eventMap.pasadia;

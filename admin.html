@@ -81,7 +81,13 @@
       </div>
 
       <!-- Quick Actions -->
-      <div class="flex items-center gap-3" id="header-actions">
+      <div class="flex items-center gap-2 sm:gap-3" id="header-actions">
+        <div class="relative hidden md:block">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-emerald-300/70 text-xs"></i>
+          <input type="text" id="global-search" placeholder="Buscar cliente, reserva, monto…" autocomplete="off"
+            class="w-44 lg:w-64 bg-white/10 border border-white/10 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder:text-emerald-200/50 focus:outline-none focus:ring-2 focus:ring-gold-400">
+          <div id="global-search-results" class="hidden absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white text-gray-800 rounded-2xl shadow-2xl border border-gray-200 z-50"></div>
+        </div>
         <a href="index.html" class="bg-white/10 hover:bg-white/20 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-2 border border-white/10">
           <i class="fa-solid fa-arrow-up-right-from-square text-xs text-gold-400"></i>
           <span class="hidden sm:inline">Ver Sitio Público</span>
@@ -160,7 +166,11 @@
 
     <!-- TABS DE NAVEGACIÓN PRINCIPAL DEL PANEL -->
     <div class="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3" id="main-tabs">
-      <button id="nav-btn-calendar" class="admin-tab-btn active px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-forest-800 text-white shadow transition flex items-center gap-2" data-tab="calendar">
+      <button id="nav-btn-today" class="admin-tab-btn active px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-forest-800 text-white shadow transition flex items-center gap-2" data-tab="today">
+        <i class="fa-solid fa-house text-gold-400"></i>
+        <span>Hoy</span>
+      </button>
+      <button id="nav-btn-calendar" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="calendar">
         <i class="fa-solid fa-calendar-days text-gold-400"></i>
         <span>Calendario</span>
       </button>
@@ -168,6 +178,10 @@
         <i class="fa-solid fa-inbox text-amber-500"></i>
         <span>Reservas</span>
         <span id="nav-pending-badge" class="px-2 py-0.5 rounded-full text-[0.68rem] bg-amber-100 text-amber-800 font-extrabold ml-1">0</span>
+      </button>
+      <button id="nav-btn-clients" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="clients">
+        <i class="fa-solid fa-address-book text-sky-600"></i>
+        <span>Clientes</span>
       </button>
       <button id="nav-btn-spaces" class="admin-tab-btn px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 transition flex items-center gap-2" data-tab="spaces">
         <i class="fa-solid fa-building-columns text-cyan-600"></i>
@@ -219,8 +233,43 @@
       </button>
     </div>
 
+    <!-- 1b. AGENDA HOY -->
+    <section id="section-today" class="admin-view-section bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-house text-gold-600"></i> Agenda del día</span>
+          <h3 id="today-title" class="font-serif text-2xl font-bold text-forest-900 mt-1">Hoy</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Todo lo importante sin abrir pestañas.</p>
+        </div>
+        <button onclick="openWizard()" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
+          <i class="fa-solid fa-plus"></i> <span>Nueva Reserva</span>
+        </button>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="today-kpis"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h4 class="font-bold text-sm text-forest-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-calendar-day text-emerald-600"></i> Eventos de hoy</h4>
+          <div id="today-events" class="space-y-2"></div>
+        </div>
+        <div>
+          <h4 class="font-bold text-sm text-forest-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-forward text-sky-600"></i> Próximos 7 días</h4>
+          <div id="today-upcoming" class="space-y-2"></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div>
+          <h4 class="font-bold text-sm text-forest-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-sack-dollar text-amber-600"></i> Señas y saldos por cobrar</h4>
+          <div id="today-collect" class="space-y-2"></div>
+        </div>
+        <div>
+          <h4 class="font-bold text-sm text-forest-900 mb-3 flex items-center gap-2"><i class="fa-solid fa-list-check text-purple-600"></i> Tareas pendientes</h4>
+          <div id="today-tasks" class="space-y-2"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- 2. CALENDARIO INTUITIVO DE DISPONIBILIDAD -->
-    <section id="section-calendar" class="admin-view-section bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7">
+    <section id="section-calendar" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7">
       
       <!-- Calendar Header & Navigation -->
       <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-gray-100">
@@ -396,6 +445,22 @@
         <!-- Renderizado dinámico desde admin.js -->
       </div>
 
+    </section>
+
+    <!-- 3b. DIRECTORIO DE CLIENTES -->
+    <section id="section-clients" class="admin-view-section hidden bg-white rounded-3xl border border-gray-200 shadow-sm p-5 sm:p-7 space-y-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+        <div>
+          <span class="badge-tag uppercase tracking-widest text-xs"><i class="fa-solid fa-address-book text-sky-600"></i> Mini CRM</span>
+          <h3 class="font-serif text-2xl font-bold text-forest-900 mt-1">Directorio de Clientes</h3>
+          <p class="text-xs sm:text-sm text-gray-500">Una ficha por teléfono con historial, gasto total y etiquetas.</p>
+        </div>
+        <div class="w-full sm:w-72 relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+          <input type="text" id="search-clients" placeholder="Buscar cliente…" class="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+        </div>
+      </div>
+      <div id="clients-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
     </section>
 
     <!-- 4. CONFIGURACIÓN DE TARIFAS Y PRECIOS PARAMETRIZABLES -->
@@ -705,6 +770,9 @@
           <button id="btn-add-pricing-rule" class="btn-forest px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow w-full sm:w-auto">
             <i class="fa-solid fa-plus"></i> <span>Nueva Regla</span>
           </button>
+          <button id="btn-price-history" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border border-gray-300 text-gray-700 hover:bg-gray-100 transition w-full sm:w-auto">
+            <i class="fa-solid fa-clock-rotate-left text-amber-600"></i> <span>Historial y simulador</span>
+          </button>
         </div>
       </div>
       <div id="pricing-rules-list" class="space-y-3"></div>
@@ -740,8 +808,17 @@
             <option value="year">Este Año</option>
             <option value="custom">Personalizado</option>
           </select>
-          <button id="btn-export-finances" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow">
-            <i class="fa-solid fa-download"></i> Exportar
+          <button id="btn-export-finances" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow" title="Descargar CSV del período">
+            <i class="fa-solid fa-file-csv"></i> CSV
+          </button>
+          <button id="btn-export-excel" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow" title="Descargar Excel del período">
+            <i class="fa-solid fa-file-excel"></i> Excel
+          </button>
+          <button id="btn-export-pdf" class="btn-forest px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow" title="Descargar PDF del período">
+            <i class="fa-solid fa-file-pdf"></i> PDF
+          </button>
+          <button id="btn-print-monthly" class="px-4 py-2 rounded-xl text-xs font-bold border border-gray-300 text-gray-700 hover:bg-gray-100 flex items-center gap-2" title="Planilla mensual para imprimir">
+            <i class="fa-solid fa-print"></i> Imprimir
           </button>
         </div>
       </div>
@@ -873,6 +950,7 @@
         </div>
       </div>
       <div class="grid grid-cols-2 lg:grid-cols-5 gap-4" id="surveys-kpis"></div>
+      <div id="surveys-trend" class="bg-gray-50/50 rounded-2xl p-5 border border-gray-200"></div>
       <div id="surveys-list" class="overflow-x-auto"></div>
     </section>
 
@@ -1098,6 +1176,53 @@
             </div>
           </div>
 
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4 lg:col-span-2">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-brands fa-whatsapp text-emerald-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Plantillas de WhatsApp</h4>
+            </div>
+            <p class="text-xs text-gray-500">Variables disponibles: <code>{nombre}</code> <code>{fecha}</code> <code>{saldo}</code> <code>{monto}</code> <code>{motivo}</code> <code>{negocio}</code> <code>{link}</code></p>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm">
+              <div>
+                <label for="setting-wa-confirmar" class="block text-xs font-bold text-gray-700 mb-1">Confirmación de reserva</label>
+                <textarea id="setting-wa-confirmar" rows="2" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+              </div>
+              <div>
+                <label for="setting-wa-saldo" class="block text-xs font-bold text-gray-700 mb-1">Recordatorio de saldo</label>
+                <textarea id="setting-wa-saldo" rows="2" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+              </div>
+              <div>
+                <label for="setting-wa-agradecer" class="block text-xs font-bold text-gray-700 mb-1">Agradecimiento post-evento</label>
+                <textarea id="setting-wa-agradecer" rows="2" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+              </div>
+              <div>
+                <label for="setting-wa-verificado" class="block text-xs font-bold text-gray-700 mb-1">Seña verificada</label>
+                <textarea id="setting-wa-verificado" rows="2" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+              </div>
+              <div class="lg:col-span-2">
+                <label for="setting-wa-rechazado" class="block text-xs font-bold text-gray-700 mb-1">Seña rechazada</label>
+                <textarea id="setting-wa-rechazado" rows="2" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
+            <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
+              <i class="fa-solid fa-clock text-gold-600 text-lg"></i>
+              <h4 class="font-serif font-bold text-base sm:text-lg">Sesión</h4>
+            </div>
+            <div class="space-y-4 text-sm">
+              <div>
+                <label for="setting-session-days" class="block text-xs font-bold text-gray-700 mb-1">Duración de sesión (días)</label>
+                <input type="number" id="setting-session-days" min="1" max="90" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+              <div>
+                <label for="setting-remember-days" class="block text-xs font-bold text-gray-700 mb-1">Duración con "Recordarme" (días)</label>
+                <input type="number" id="setting-remember-days" min="1" max="365" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-800">
+              </div>
+            </div>
+          </div>
+
           <div class="p-6 rounded-2xl bg-gray-50/70 border border-gray-200 space-y-4">
             <div class="flex items-center gap-2 text-forest-900 pb-2 border-b border-gray-200">
               <i class="fa-solid fa-database text-gold-600 text-lg"></i>
@@ -1118,6 +1243,18 @@
               <button type="button" id="btn-clear-all" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 w-full sm:w-auto">
                 <i class="fa-solid fa-trash"></i> Limpiar Todo (¡Irreversible!)
               </button>
+              <div class="border-t border-gray-200 pt-4 space-y-3">
+                <div class="text-xs text-gray-600">Uso de almacenamiento: <b id="storage-meter-txt">—</b></div>
+                <div class="h-2 rounded-full bg-gray-200 overflow-hidden"><div id="storage-meter-bar" class="h-full bg-forest-700 rounded-full" style="width:0%"></div></div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" id="btn-clean-backups" class="px-4 py-2 rounded-xl text-xs font-bold border border-gray-300 text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                    <i class="fa-solid fa-broom"></i> Limpiar respaldos viejos
+                  </button>
+                  <button type="button" id="btn-archive-year" class="px-4 py-2 rounded-xl text-xs font-bold border border-gray-300 text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                    <i class="fa-solid fa-box-archive"></i> Archivar año cerrado
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1275,7 +1412,13 @@
     <p>© 2026 Quinta Javy'aha Ña Juana-Irene • Panel de Gestión de Disponibilidad y Reservas</p>
   </footer>
 
+  <!-- Área de impresión de reportes -->
+  <div id="print-area" class="hidden"></div>
+
   <!-- Admin Script -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

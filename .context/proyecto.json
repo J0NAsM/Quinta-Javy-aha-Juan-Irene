@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "PROJECT_ID": "quinta",
+  "PROJECT_NAME": "Quinta Javy'aha Ña Juan-Irene",
+  "TYPE": "static-demo",
+  "TECH_STACK": "HTML/CSS/JS; administración en almacenamiento del navegador",
+  "TECH_STACK_SOURCE": [],
+  "ENVIRONMENT": "NO DETERMINADO",
+  "STATUS": "NO DETERMINADO",
+  "OBSERVED_STATE": "Demo de sitio y administración simulada.",
+  "VERSION_SOURCE": [],
+  "LAST_CONTEXT_UPDATE": "2026-09-14",
+  "LAST_VALIDATION": {
+    "date": "NO DETERMINADO",
+    "revision": "NO DETERMINADO",
+    "command": "NO DETERMINADO",
+    "result": "NO DETERMINADO"
+  },
+  "LAST_DEPLOY": "NO DETERMINADO",
+  "EXTERNAL_DEPENDENCIES": "Servidor estático para demo; backend real NO DETERMINADO.",
+  "CONFIG_SOURCES": [],
+  "SOURCE_HASHES": {},
+  "VAULTS_ROOT_RELATIVE": "../../Vaults/jmartinez"
+}
